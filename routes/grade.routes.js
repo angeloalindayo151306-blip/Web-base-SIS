@@ -6,12 +6,13 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE GRADE (TEACHER ONLY)
+   CREATE GRADE
+   Admin & Teacher
 ====================================================== */
 router.post(
   '/',
   authenticateToken,
-  authorizeRoles('teacher', 'admin'),
+  authorizeRoles('admin', 'teacher'),
   async (req, res) => {
     const { student_id, subject_id, grade_value, grading_period } = req.body;
 
@@ -29,16 +30,14 @@ router.post(
 
     const { data, error } = await supabase
       .from('grades')
-      .insert([
-        {
-          student_id,
-          subject_id,
-          teacher_id: teacherId,
-          grade_value,
-          grading_period,
-          school_year_id: null,
-        },
-      ])
+      .insert([{
+        student_id,
+        subject_id,
+        teacher_id: teacherId,
+        grade_value,
+        grading_period,
+        school_year_id: null
+      }])
       .select()
       .single();
 
@@ -49,25 +48,64 @@ router.post(
 );
 
 /* ======================================================
-   GET ALL GRADES (ADMIN)
+   GET ALL GRADES
+   Admin can see ALL
+   Teacher sees their own
+   Student sees own
 ====================================================== */
 router.get(
-  '/all',
+  '/',
   authenticateToken,
-  authorizeRoles('admin'),
   async (req, res) => {
-    const { data, error } = await supabase
-      .from('grades')
-      .select('*');
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (req.user.role === 'admin') {
+      const { data, error } = await supabase
+        .from('grades')
+        .select('*');
 
-    res.json(data);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    if (req.user.role === 'teacher') {
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      const { data, error } = await supabase
+        .from('grades')
+        .select('*')
+        .eq('teacher_id', teacher.id);
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    if (req.user.role === 'student') {
+      const { data: student } = await supabase
+        .from('students')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      const { data, error } = await supabase
+        .from('grades')
+        .select('*')
+        .eq('student_id', student.id);
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data);
+    }
+
+    res.status(403).json({ error: 'Access denied' });
   }
 );
 
 /* ======================================================
    UPDATE GRADE
+   Admin & Teacher
 ====================================================== */
 router.put(
   '/:id',
@@ -91,7 +129,8 @@ router.put(
 );
 
 /* ======================================================
-   DELETE GRADE (ADMIN)
+   DELETE GRADE
+   Admin only
 ====================================================== */
 router.delete(
   '/:id',
@@ -108,40 +147,6 @@ router.delete(
     if (error) return res.status(500).json({ error: error.message });
 
     res.json({ message: 'Grade deleted ✅' });
-  }
-);
-
-/* ======================================================
-   STUDENT VIEW OWN GRADES
-====================================================== */
-router.get(
-  '/',
-  authenticateToken,
-  authorizeRoles('student'),
-  async (req, res) => {
-    const { data: student } = await supabase
-      .from('students')
-      .select('id')
-      .eq('user_id', req.user.id)
-      .single();
-
-    const { data: grades } = await supabase
-      .from('grades')
-      .select('*')
-      .eq('student_id', student.id);
-
-    let average = null;
-
-    if (grades.length > 0) {
-      const total = grades.reduce((sum, g) => sum + Number(g.grade_value), 0);
-      average = (total / grades.length).toFixed(2);
-    }
-
-    res.json({
-      message: 'Student grades retrieved ✅',
-      data: grades,
-      average_grade: average,
-    });
   }
 );
 
