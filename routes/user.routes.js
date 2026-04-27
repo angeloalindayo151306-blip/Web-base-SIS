@@ -1,29 +1,45 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabaseClient');
-const authenticateToken = require('../middleware/authenticateToken');
-const authorizeRoles = require('../middleware/authorizeRoles');
 
-const router = express.Router();
+const router = express.Router(); // ✅ THIS LINE MUST EXIST
 
-router.post(
-  '/',
-  authenticateToken,
-  authorizeRoles('admin'),
-  async (req, res) => {
-    const { email, password, role } = req.body;
+router.post('/login', async (req, res) => {
+const { email, password } = req.body;
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+const { data } = await supabase
+.from('users')
+.select('*')
+.eq('email', email);
 
-    const { data, error } = await supabase
-      .from('users')
-      .insert([{ email, password_hash: hashedPassword, role }])
-      .select();
+if (!data || data.length === 0) {
+return res.status(401).json({ error: 'Invalid credentials' });
+}
 
-    if (error) return res.status(500).json({ error: error.message });
+const user = data[0];
 
-    res.json(data);
-  }
+const match = await bcrypt.compare(password, user.password_hash);
+
+if (!match) {
+return res.status(401).json({ error: 'Invalid credentials' });
+}
+
+const token = jwt.sign(
+{ id: user.id, role: user.role },
+process.env.JWT_SECRET,
+{ expiresIn: '1h' }
 );
 
-module.exports = router;
+res.json({
+token,
+user: {
+id: user.id,
+full_name: user.full_name,
+role: user.role,
+email: user.email
+}
+});
+});
+
+module.exports = router; // ✅ THIS MUST EXIST
