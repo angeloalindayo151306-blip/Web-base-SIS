@@ -6,9 +6,93 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
+   CREATE PARENT (ADMIN ONLY)
+====================================================== */
+router.post(
+  '/',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { full_name, email, user_id } = req.body;
+
+    const { data, error } = await supabase
+      .from('parents')
+      .insert([{ full_name, email, user_id }])
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+/* ======================================================
+   GET ALL PARENTS (ADMIN ONLY)
+====================================================== */
+router.get(
+  '/',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { data, error } = await supabase
+      .from('parents')
+      .select('*');
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+/* ======================================================
+   UPDATE PARENT
+====================================================== */
+router.put(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+    const { full_name, email } = req.body;
+
+    const { data, error } = await supabase
+      .from('parents')
+      .update({ full_name, email })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+/* ======================================================
+   DELETE PARENT
+====================================================== */
+router.delete(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('parents')
+      .delete()
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'Parent deleted ✅' });
+  }
+);
+
+/* ======================================================
    PARENT DASHBOARD
 ====================================================== */
-
 router.get(
   '/dashboard',
   authenticateToken,
@@ -51,7 +135,6 @@ router.get(
 /* ======================================================
    PARENT VIEW LINKED GRADES
 ====================================================== */
-
 router.get(
   '/grades',
   authenticateToken,
@@ -72,28 +155,16 @@ router.get(
 
     const { data: grades } = await supabase
       .from('grades')
-      .select('student_id, subject_id, grade_value, grading_period')
+      .select('*')
       .in('student_id', studentIds);
 
-    let average = null;
-
-    if (grades.length > 0) {
-      const total = grades.reduce((sum, g) => sum + Number(g.grade_value), 0);
-      average = (total / grades.length).toFixed(2);
-    }
-
-    res.json({
-      message: 'Parent linked grades retrieved ✅',
-      data: grades,
-      average_grade: average,
-    });
+    res.json(grades);
   }
 );
 
 /* ======================================================
    PARENT VIEW LINKED ATTENDANCE
 ====================================================== */
-
 router.get(
   '/attendance',
   authenticateToken,
@@ -114,13 +185,10 @@ router.get(
 
     const { data } = await supabase
       .from('attendance')
-      .select('student_id, subject_id, attendance_date, status')
+      .select('*')
       .in('student_id', studentIds);
 
-    res.json({
-      message: 'Parent linked attendance retrieved ✅',
-      data,
-    });
+    res.json(data);
   }
 );
 

@@ -1,45 +1,101 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabaseClient');
+const authenticateToken = require('../middleware/authenticateToken');
+const authorizeRoles = require('../middleware/authorizeRoles');
 
-const router = express.Router(); // ✅ THIS LINE MUST EXIST
+const router = express.Router();
 
-router.post('/login', async (req, res) => {
-const { email, password } = req.body;
+/* =========================
+   CREATE USER
+========================= */
+router.post(
+  '/',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { full_name, email, password, role } = req.body;
 
-const { data } = await supabase
-.from('users')
-.select('*')
-.eq('email', email);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-if (!data || data.length === 0) {
-return res.status(401).json({ error: 'Invalid credentials' });
-}
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{
+        full_name,
+        email,
+        password_hash: hashedPassword,
+        role
+      }])
+      .select()
+      .single();
 
-const user = data[0];
+    if (error) return res.status(500).json({ error: error.message });
 
-const match = await bcrypt.compare(password, user.password_hash);
-
-if (!match) {
-return res.status(401).json({ error: 'Invalid credentials' });
-}
-
-const token = jwt.sign(
-{ id: user.id, role: user.role },
-process.env.JWT_SECRET,
-{ expiresIn: '1h' }
+    res.json(data);
+  }
 );
 
-res.json({
-token,
-user: {
-id: user.id,
-full_name: user.full_name,
-role: user.role,
-email: user.email
-}
-});
-});
+/* =========================
+   READ ALL USERS
+========================= */
+router.get(
+  '/',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, email, role');
 
-module.exports = router; // ✅ THIS MUST EXIST
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+/* =========================
+   UPDATE USER
+========================= */
+router.put(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+    const { full_name, email, role } = req.body;
+
+    const { data, error } = await supabase
+      .from('users')
+      .update({ full_name, email, role })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+/* =========================
+   DELETE USER
+========================= */
+router.delete(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'User deleted ✅' });
+  }
+);
+
+module.exports = router;

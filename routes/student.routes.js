@@ -6,6 +6,75 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 
 const router = express.Router();
 
+router.delete(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'Student deleted ✅' });
+  }
+);
+
+router.put(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const {
+      student_number,
+      first_name,
+      last_name,
+      course,
+      year_level,
+      section
+    } = req.body;
+
+    const { data, error } = await supabase
+      .from('students')
+      .update({
+        student_number,
+        first_name,
+        last_name,
+        course,
+        year_level,
+        section
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
+router.get(
+  '/',
+  authenticateToken,
+  authorizeRoles('admin', 'teacher'),
+  async (req, res) => {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*');
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  }
+);
+
 // Create student with QR
 router.post(
   '/',
