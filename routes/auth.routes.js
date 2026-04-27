@@ -1,3 +1,10 @@
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const supabase = require('../config/supabaseClient');
+
+const router = express.Router();   // ✅ THIS LINE MUST EXIST
+
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -24,7 +31,6 @@ router.post('/login', async (req, res) => {
     { expiresIn: '1h' }
   );
 
-  // ✅ Return BOTH token and user object
   res.json({
     token,
     user: {
@@ -35,3 +41,5 @@ router.post('/login', async (req, res) => {
     }
   });
 });
+
+module.exports = router;   // ✅ THIS MUST EXIST
