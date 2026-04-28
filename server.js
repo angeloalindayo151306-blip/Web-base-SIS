@@ -10,6 +10,7 @@ const attendanceRoutes = require('./routes/attendance.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const teacherRoutes = require('./routes/teacher.routes');
 const parentRoutes = require('./routes/parent.routes');
+const subjectRoutes = require('./routes/subject.routes');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/parent', parentRoutes);
+app.use('/api/subjects', subjectRoutes);
 
 const PORT = process.env.PORT || 5000;
 
