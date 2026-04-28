@@ -11,6 +11,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const teacherRoutes = require('./routes/teacher.routes');
 const parentRoutes = require('./routes/parent.routes');
 const subjectRoutes = require('./routes/subject.routes');
+const schoolYearRoutes = require('./routes/schoolYear.routes');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/teachers', teacherRoutes);   // also fixed for consistency
 app.use('/api/parents', parentRoutes);     // ✅ FIXED HERE
 app.use('/api/subjects', subjectRoutes);
+app.use('/api/school-years', schoolYearRoutes);
 
 const PORT = process.env.PORT || 5000;
 
