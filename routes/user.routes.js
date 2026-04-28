@@ -16,6 +16,21 @@ router.post(
   async (req, res) => {
     const { full_name, email, password, role } = req.body;
 
+    if (!full_name || !email || !password || !role) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    // Check duplicate email
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
+    if (existing) {
+      return res.status(400).json({ error: 'Email already exists.' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const { data, error } = await supabase
@@ -24,14 +39,15 @@ router.post(
         full_name,
         email,
         password_hash: hashedPassword,
-        role
+        role,
+        is_active: true
       }])
-      .select()
+      .select('id, full_name, email, role, is_active')
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.status(201).json(data);
   }
 );
 
@@ -45,7 +61,8 @@ router.get(
   async (req, res) => {
     const { data, error } = await supabase
       .from('users')
-      .select('id, full_name, email, role');
+      .select('id, full_name, email, role, is_active')
+      .order('created_at', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
 
@@ -62,13 +79,19 @@ router.put(
   authorizeRoles('admin'),
   async (req, res) => {
     const { id } = req.params;
-    const { full_name, email, role } = req.body;
+    const { full_name, email, role, is_active } = req.body;
 
     const { data, error } = await supabase
       .from('users')
-      .update({ full_name, email, role })
+      .update({
+        full_name,
+        email,
+        role,
+        is_active,
+        updated_at: new Date()
+      })
       .eq('id', id)
-      .select()
+      .select('id, full_name, email, role, is_active')
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
@@ -78,7 +101,38 @@ router.put(
 );
 
 /* =========================
-   DELETE USER
+   RESET PASSWORD
+========================= */
+router.put(
+  '/:id/reset-password',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ error: 'New password required.' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        password_hash: hashed,
+        updated_at: new Date()
+      })
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'Password reset successfully ✅' });
+  }
+);
+
+/* =========================
+   DEACTIVATE USER (Soft Delete)
 ========================= */
 router.delete(
   '/:id',
@@ -89,12 +143,15 @@ router.delete(
 
     const { error } = await supabase
       .from('users')
-      .delete()
+      .update({
+        is_active: false,
+        updated_at: new Date()
+      })
       .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ message: 'User deleted ✅' });
+    res.json({ message: 'User deactivated ✅' });
   }
 );
 
