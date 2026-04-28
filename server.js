@@ -21,14 +21,15 @@ app.get('/', (req, res) => {
   res.send('SIS Backend Running ✅');
 });
 
+// ✅ API ROUTES
 app.use('/api', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/teacher', teacherRoutes);
-app.use('/api/parent', parentRoutes);
+app.use('/api/teachers', teacherRoutes);   // also fixed for consistency
+app.use('/api/parents', parentRoutes);     // ✅ FIXED HERE
 app.use('/api/subjects', subjectRoutes);
 
 const PORT = process.env.PORT || 5000;
