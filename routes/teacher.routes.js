@@ -13,11 +13,17 @@ router.post(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-    const { full_name, email, user_id } = req.body;
+    const { first_name, last_name, user_id } = req.body;
 
     const { data, error } = await supabase
       .from('teachers')
-      .insert([{ full_name, email, user_id }])
+      .insert([
+        {
+          first_name,
+          last_name,
+          user_id
+        }
+      ])
       .select()
       .single();
 
@@ -28,20 +34,34 @@ router.post(
 );
 
 /* ======================================================
-   GET ALL TEACHERS
+   GET ALL TEACHERS (WITH USER EMAIL)
 ====================================================== */
 router.get(
   '/',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
+
     const { data, error } = await supabase
       .from('teachers')
-      .select('*');
+      .select(`
+        id,
+        first_name,
+        last_name,
+        users(email)
+      `)
+      .eq('is_deleted', false);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    // ✅ Format clean response
+    const formatted = data.map(t => ({
+      id: t.id,
+      full_name: `${t.first_name} ${t.last_name}`,
+      email: t.users?.email || '-'
+    }));
+
+    res.json(formatted);
   }
 );
 
@@ -54,11 +74,15 @@ router.put(
   authorizeRoles('admin'),
   async (req, res) => {
     const { id } = req.params;
-    const { full_name, email } = req.body;
+    const { first_name, last_name } = req.body;
 
     const { data, error } = await supabase
       .from('teachers')
-      .update({ full_name, email })
+      .update({
+        first_name,
+        last_name,
+        updated_at: new Date()
+      })
       .eq('id', id)
       .select()
       .single();
@@ -70,7 +94,7 @@ router.put(
 );
 
 /* ======================================================
-   DELETE TEACHER
+   DELETE TEACHER (SOFT DELETE)
 ====================================================== */
 router.delete(
   '/:id',
@@ -81,12 +105,12 @@ router.delete(
 
     const { error } = await supabase
       .from('teachers')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ message: 'Teacher deleted ✅' });
+    res.json({ message: 'Teacher deleted ✅ (soft delete)' });
   }
 );
 
@@ -98,6 +122,7 @@ router.get(
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
+
     const { data: teacher } = await supabase
       .from('teachers')
       .select('id')
@@ -118,8 +143,8 @@ router.get(
       message: 'Teacher dashboard ✅',
       totals: {
         grades_encoded: grades.count || 0,
-        attendance_recorded: attendance.count || 0,
-      },
+        attendance_recorded: attendance.count || 0
+      }
     });
   }
 );
@@ -132,15 +157,25 @@ router.get(
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
+
     const { data, error } = await supabase
       .from('teachers')
-      .select('*')
+      .select(`
+        id,
+        first_name,
+        last_name,
+        users(email)
+      `)
       .eq('user_id', req.user.id)
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.json({
+      id: data.id,
+      full_name: `${data.first_name} ${data.last_name}`,
+      email: data.users?.email || '-'
+    });
   }
 );
 

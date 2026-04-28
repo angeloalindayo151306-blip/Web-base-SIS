@@ -18,26 +18,33 @@ router.post(
 
     let teacherId = null;
 
+    // ✅ If teacher, auto-detect teacher_id
     if (req.user.role === 'teacher') {
-      const { data: teacher } = await supabase
+      const { data: teacher, error: teacherError } = await supabase
         .from('teachers')
         .select('id')
         .eq('user_id', req.user.id)
         .single();
+
+      if (teacherError) {
+        return res.status(400).json({ error: teacherError.message });
+      }
 
       teacherId = teacher.id;
     }
 
     const { data, error } = await supabase
       .from('grades')
-      .insert([{
-        student_id,
-        subject_id,
-        teacher_id: teacherId,
-        grade_value,
-        grading_period,
-        school_year_id: null
-      }])
+      .insert([
+        {
+          student_id,
+          subject_id,
+          teacher_id: teacherId,
+          grade_value,
+          grading_period,
+          school_year_id: null
+        }
+      ])
       .select()
       .single();
 
@@ -49,24 +56,27 @@ router.post(
 
 /* ======================================================
    GET ALL GRADES
-   Admin can see ALL
-   Teacher sees their own
-   Student sees own
+   Admin → All
+   Teacher → Own
+   Student → Own
 ====================================================== */
 router.get(
   '/',
   authenticateToken,
   async (req, res) => {
 
-    if (req.user.role === 'admin') {
-      const { data, error } = await supabase
-        .from('grades')
-        .select('*');
+    let query = supabase
+      .from('grades')
+      .select(`
+        id,
+        grade_value,
+        grading_period,
+        students(full_name),
+        subjects(name),
+        teachers(full_name)
+      `);
 
-      if (error) return res.status(500).json({ error: error.message });
-      return res.json(data);
-    }
-
+    // ✅ Teacher sees only their grades
     if (req.user.role === 'teacher') {
       const { data: teacher } = await supabase
         .from('teachers')
@@ -74,15 +84,10 @@ router.get(
         .eq('user_id', req.user.id)
         .single();
 
-      const { data, error } = await supabase
-        .from('grades')
-        .select('*')
-        .eq('teacher_id', teacher.id);
-
-      if (error) return res.status(500).json({ error: error.message });
-      return res.json(data);
+      query = query.eq('teacher_id', teacher.id);
     }
 
+    // ✅ Student sees only their grades
     if (req.user.role === 'student') {
       const { data: student } = await supabase
         .from('students')
@@ -90,22 +95,30 @@ router.get(
         .eq('user_id', req.user.id)
         .single();
 
-      const { data, error } = await supabase
-        .from('grades')
-        .select('*')
-        .eq('student_id', student.id);
-
-      if (error) return res.status(500).json({ error: error.message });
-      return res.json(data);
+      query = query.eq('student_id', student.id);
     }
 
-    res.status(403).json({ error: 'Access denied' });
+    const { data, error } = await query;
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    // ✅ Format clean response for frontend
+    const formatted = data.map(g => ({
+      id: g.id,
+      student_name: g.students?.full_name || '-',
+      subject_name: g.subjects?.name || '-',
+      teacher_name: g.teachers?.full_name || '-',
+      grade_value: g.grade_value,
+      grading_period: g.grading_period
+    }));
+
+    res.json(formatted);
   }
 );
 
 /* ======================================================
    UPDATE GRADE
-   Admin & Teacher
+   Admin & Teacher (Own Only)
 ====================================================== */
 router.put(
   '/:id',
@@ -115,6 +128,28 @@ router.put(
     const { id } = req.params;
     const { grade_value, grading_period } = req.body;
 
+    // ✅ If teacher, restrict update to own grades
+    if (req.user.role === 'teacher') {
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      const { data, error } = await supabase
+        .from('grades')
+        .update({ grade_value, grading_period })
+        .eq('id', id)
+        .eq('teacher_id', teacher.id)
+        .select()
+        .single();
+
+      if (error) return res.status(500).json({ error: error.message });
+
+      return res.json(data);
+    }
+
+    // ✅ Admin can update any
     const { data, error } = await supabase
       .from('grades')
       .update({ grade_value, grading_period })
@@ -130,7 +165,7 @@ router.put(
 
 /* ======================================================
    DELETE GRADE
-   Admin only
+   Admin Only
 ====================================================== */
 router.delete(
   '/:id',

@@ -13,11 +13,17 @@ router.post(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-    const { full_name, email, user_id } = req.body;
+    const { first_name, last_name, user_id } = req.body;
 
     const { data, error } = await supabase
       .from('parents')
-      .insert([{ full_name, email, user_id }])
+      .insert([
+        {
+          first_name,
+          last_name,
+          user_id
+        }
+      ])
       .select()
       .single();
 
@@ -35,13 +41,26 @@ router.get(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { data, error } = await supabase
       .from('parents')
-      .select('*');
+      .select(`
+        id,
+        first_name,
+        last_name,
+        users(email)
+      `)
+      .eq('is_deleted', false);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    const formatted = data.map(p => ({
+      id: p.id,
+      full_name: `${p.first_name} ${p.last_name}`,
+      email: p.users?.email || '-'
+    }));
+
+    res.json(formatted);
   }
 );
 
@@ -54,11 +73,15 @@ router.put(
   authorizeRoles('admin'),
   async (req, res) => {
     const { id } = req.params;
-    const { full_name, email } = req.body;
+    const { first_name, last_name } = req.body;
 
     const { data, error } = await supabase
       .from('parents')
-      .update({ full_name, email })
+      .update({
+        first_name,
+        last_name,
+        updated_at: new Date()
+      })
       .eq('id', id)
       .select()
       .single();
@@ -70,7 +93,7 @@ router.put(
 );
 
 /* ======================================================
-   DELETE PARENT
+   DELETE PARENT (SOFT DELETE)
 ====================================================== */
 router.delete(
   '/:id',
@@ -81,12 +104,12 @@ router.delete(
 
     const { error } = await supabase
       .from('parents')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ message: 'Parent deleted ✅' });
+    res.json({ message: 'Parent deleted ✅ (soft delete)' });
   }
 );
 
@@ -98,6 +121,7 @@ router.get(
   authenticateToken,
   authorizeRoles('parent'),
   async (req, res) => {
+
     const { data: parent } = await supabase
       .from('parents')
       .select('id')
@@ -109,7 +133,7 @@ router.get(
       .select('student_id')
       .eq('parent_id', parent.id);
 
-    const studentIds = linkedStudents.map((s) => s.student_id);
+    const studentIds = linkedStudents.map(s => s.student_id);
 
     const grades = await supabase
       .from('grades')
@@ -126,20 +150,21 @@ router.get(
       totals: {
         linked_students: studentIds.length,
         total_grades: grades.count || 0,
-        attendance_records: attendance.count || 0,
-      },
+        attendance_records: attendance.count || 0
+      }
     });
   }
 );
 
 /* ======================================================
-   PARENT VIEW LINKED GRADES
+   PARENT VIEW LINKED GRADES (WITH JOINS)
 ====================================================== */
 router.get(
   '/grades',
   authenticateToken,
   authorizeRoles('parent'),
   async (req, res) => {
+
     const { data: parent } = await supabase
       .from('parents')
       .select('id')
@@ -151,25 +176,46 @@ router.get(
       .select('student_id')
       .eq('parent_id', parent.id);
 
-    const studentIds = linkedStudents.map((s) => s.student_id);
+    const studentIds = linkedStudents.map(s => s.student_id);
 
-    const { data: grades } = await supabase
+    const { data, error } = await supabase
       .from('grades')
-      .select('*')
+      .select(`
+        id,
+        grade_value,
+        grading_period,
+        students(full_name),
+        subjects(name),
+        teachers(first_name, last_name)
+      `)
       .in('student_id', studentIds);
 
-    res.json(grades);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const formatted = data.map(g => ({
+      id: g.id,
+      student_name: g.students?.full_name || '-',
+      subject_name: g.subjects?.name || '-',
+      teacher_name: g.teachers
+        ? `${g.teachers.first_name} ${g.teachers.last_name}`
+        : '-',
+      grade_value: g.grade_value,
+      grading_period: g.grading_period
+    }));
+
+    res.json(formatted);
   }
 );
 
 /* ======================================================
-   PARENT VIEW LINKED ATTENDANCE
+   PARENT VIEW LINKED ATTENDANCE (WITH JOINS)
 ====================================================== */
 router.get(
   '/attendance',
   authenticateToken,
   authorizeRoles('parent'),
   async (req, res) => {
+
     const { data: parent } = await supabase
       .from('parents')
       .select('id')
@@ -181,14 +227,34 @@ router.get(
       .select('student_id')
       .eq('parent_id', parent.id);
 
-    const studentIds = linkedStudents.map((s) => s.student_id);
+    const studentIds = linkedStudents.map(s => s.student_id);
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('attendance')
-      .select('*')
+      .select(`
+        id,
+        status,
+        date,
+        students(full_name),
+        subjects(name),
+        teachers(first_name, last_name)
+      `)
       .in('student_id', studentIds);
 
-    res.json(data);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const formatted = data.map(a => ({
+      id: a.id,
+      student_name: a.students?.full_name || '-',
+      subject_name: a.subjects?.name || '-',
+      teacher_name: a.teachers
+        ? `${a.teachers.first_name} ${a.teachers.last_name}`
+        : '-',
+      status: a.status,
+      date: a.date
+    }));
+
+    res.json(formatted);
   }
 );
 
