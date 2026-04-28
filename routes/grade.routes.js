@@ -71,12 +71,12 @@ router.get(
         id,
         grade_value,
         grading_period,
-        students(full_name),
+        students(first_name, last_name),
         subjects(name),
-        teachers(full_name)
+        teachers(first_name, last_name)
       `);
 
-    // ✅ Teacher sees only their grades
+    // ✅ Teacher filter
     if (req.user.role === 'teacher') {
       const { data: teacher } = await supabase
         .from('teachers')
@@ -87,7 +87,7 @@ router.get(
       query = query.eq('teacher_id', teacher.id);
     }
 
-    // ✅ Student sees only their grades
+    // ✅ Student filter
     if (req.user.role === 'student') {
       const { data: student } = await supabase
         .from('students')
@@ -102,12 +102,16 @@ router.get(
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // ✅ Format clean response for frontend
+    // ✅ Format clean response
     const formatted = data.map(g => ({
       id: g.id,
-      student_name: g.students?.full_name || '-',
+      student_name: g.students
+        ? `${g.students.first_name} ${g.students.last_name}`
+        : '-',
       subject_name: g.subjects?.name || '-',
-      teacher_name: g.teachers?.full_name || '-',
+      teacher_name: g.teachers
+        ? `${g.teachers.first_name} ${g.teachers.last_name}`
+        : '-',
       grade_value: g.grade_value,
       grading_period: g.grading_period
     }));
