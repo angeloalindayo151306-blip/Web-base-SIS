@@ -6,35 +6,48 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE PARENT (ADMIN ONLY)
+   CREATE PARENT + LINK STUDENTS
 ====================================================== */
 router.post(
   '/',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-    const { first_name, last_name, user_id } = req.body;
+    const { first_name, last_name, user_id, student_ids = [] } = req.body;
 
-    const { data, error } = await supabase
+    // ✅ Insert Parent
+    const { data: parent, error: parentError } = await supabase
       .from('parents')
-      .insert([
-        {
-          first_name,
-          last_name,
-          user_id
-        }
-      ])
+      .insert([{ first_name, last_name, user_id }])
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (parentError) {
+      return res.status(500).json({ error: parentError.message });
+    }
 
-    res.json(data);
+    // ✅ Insert Linking Records
+    if (student_ids.length > 0) {
+      const links = student_ids.map(student_id => ({
+        parent_id: parent.id,
+        student_id
+      }));
+
+      const { error: linkError } = await supabase
+        .from('parent_students')
+        .insert(links);
+
+      if (linkError) {
+        return res.status(500).json({ error: linkError.message });
+      }
+    }
+
+    res.json({ message: 'Parent created ✅', parent });
   }
 );
 
 /* ======================================================
-   GET ALL PARENTS (ADMIN ONLY)
+   GET ALL PARENTS (WITH LINKED STUDENTS)
 ====================================================== */
 router.get(
   '/',
@@ -48,7 +61,10 @@ router.get(
         id,
         first_name,
         last_name,
-        users(email)
+        users(email),
+        parent_students(
+          students(id, first_name, last_name)
+        )
       `)
       .eq('is_deleted', false);
 
@@ -57,7 +73,11 @@ router.get(
     const formatted = data.map(p => ({
       id: p.id,
       full_name: `${p.first_name} ${p.last_name}`,
-      email: p.users?.email || '-'
+      email: p.users?.email || '-',
+      students: p.parent_students.map(ps => ({
+        id: ps.students.id,
+        name: `${ps.students.first_name} ${ps.students.last_name}`
+      }))
     }));
 
     res.json(formatted);
@@ -65,7 +85,7 @@ router.get(
 );
 
 /* ======================================================
-   UPDATE PARENT
+   UPDATE PARENT + UPDATE STUDENT LINKS
 ====================================================== */
 router.put(
   '/:id',
@@ -73,22 +93,45 @@ router.put(
   authorizeRoles('admin'),
   async (req, res) => {
     const { id } = req.params;
-    const { first_name, last_name } = req.body;
+    const { first_name, last_name, student_ids = [] } = req.body;
 
-    const { data, error } = await supabase
+    // ✅ Update Parent
+    const { error: updateError } = await supabase
       .from('parents')
       .update({
         first_name,
         last_name,
         updated_at: new Date()
       })
-      .eq('id', id)
-      .select()
-      .single();
+      .eq('id', id);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
 
-    res.json(data);
+    // ✅ Remove old links
+    await supabase
+      .from('parent_students')
+      .delete()
+      .eq('parent_id', id);
+
+    // ✅ Insert new links
+    if (student_ids.length > 0) {
+      const links = student_ids.map(student_id => ({
+        parent_id: id,
+        student_id
+      }));
+
+      const { error: linkError } = await supabase
+        .from('parent_students')
+        .insert(links);
+
+      if (linkError) {
+        return res.status(500).json({ error: linkError.message });
+      }
+    }
+
+    res.json({ message: 'Parent updated ✅' });
   }
 );
 
@@ -100,6 +143,7 @@ router.delete(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
 
     const { error } = await supabase
@@ -157,7 +201,7 @@ router.get(
 );
 
 /* ======================================================
-   PARENT VIEW LINKED GRADES (WITH JOINS)
+   PARENT VIEW LINKED GRADES (FIXED)
 ====================================================== */
 router.get(
   '/grades',
@@ -184,7 +228,7 @@ router.get(
         id,
         grade_value,
         grading_period,
-        students(full_name),
+        students(first_name, last_name),
         subjects(name),
         teachers(first_name, last_name)
       `)
@@ -194,7 +238,9 @@ router.get(
 
     const formatted = data.map(g => ({
       id: g.id,
-      student_name: g.students?.full_name || '-',
+      student_name: g.students
+        ? `${g.students.first_name} ${g.students.last_name}`
+        : '-',
       subject_name: g.subjects?.name || '-',
       teacher_name: g.teachers
         ? `${g.teachers.first_name} ${g.teachers.last_name}`
@@ -208,7 +254,7 @@ router.get(
 );
 
 /* ======================================================
-   PARENT VIEW LINKED ATTENDANCE (WITH JOINS)
+   PARENT VIEW LINKED ATTENDANCE (FIXED)
 ====================================================== */
 router.get(
   '/attendance',
@@ -235,7 +281,7 @@ router.get(
         id,
         status,
         date,
-        students(full_name),
+        students(first_name, last_name),
         subjects(name),
         teachers(first_name, last_name)
       `)
@@ -245,7 +291,9 @@ router.get(
 
     const formatted = data.map(a => ({
       id: a.id,
-      student_name: a.students?.full_name || '-',
+      student_name: a.students
+        ? `${a.students.first_name} ${a.students.last_name}`
+        : '-',
       subject_name: a.subjects?.name || '-',
       teacher_name: a.teachers
         ? `${a.teachers.first_name} ${a.teachers.last_name}`
