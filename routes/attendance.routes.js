@@ -6,7 +6,7 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE ATTENDANCE (TEACHER / ADMIN)
+   CREATE ATTENDANCE (ADMIN / TEACHER)
 ====================================================== */
 router.post(
   '/',
@@ -28,25 +28,66 @@ router.post(
 );
 
 /* ======================================================
-   GET ALL ATTENDANCE (ADMIN)
+   GET ATTENDANCE
+   Admin → All
+   Student → Own
 ====================================================== */
 router.get(
   '/',
   authenticateToken,
-  authorizeRoles('admin'),
   async (req, res) => {
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('*');
+    try {
+      let query = supabase
+        .from('attendance')
+        .select(`
+          id,
+          attendance_date,
+          status,
+          students(first_name, last_name)
+        `);
 
-    if (error) return res.status(500).json({ error: error.message });
+      // ✅ If student → show only their attendance
+      if (req.user.role === 'student') {
+        const { data: student, error: studentError } = await supabase
+          .from('students')
+          .select('id')
+          .eq('user_id', req.user.id)
+          .single();
 
-    res.json(data);
+        if (studentError) {
+          return res.status(400).json({ error: studentError.message });
+        }
+
+        query = query.eq('student_id', student.id);
+      }
+
+      // ✅ Admin sees all (no filter)
+
+      const { data, error } = await query;
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      const formatted = data.map(a => ({
+        id: a.id,
+        student_name: a.students
+          ? `${a.students.first_name} ${a.students.last_name}`
+          : '-',
+        attendance_date: a.attendance_date,
+        status: a.status
+      }));
+
+      res.json(formatted);
+
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
   }
 );
 
 /* ======================================================
-   UPDATE ATTENDANCE
+   UPDATE ATTENDANCE (ADMIN ONLY)
 ====================================================== */
 router.put(
   '/:id',
@@ -70,7 +111,7 @@ router.put(
 );
 
 /* ======================================================
-   DELETE ATTENDANCE
+   DELETE ATTENDANCE (ADMIN ONLY)
 ====================================================== */
 router.delete(
   '/:id',
