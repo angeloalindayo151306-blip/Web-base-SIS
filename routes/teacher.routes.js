@@ -13,7 +13,25 @@ router.post(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-    const { first_name, last_name, user_id } = req.body;
+    const { first_name, last_name, user_id, department } = req.body;
+
+    if (!first_name || !last_name || !user_id || !department) {
+      return res.status(400).json({
+        error: 'All fields are required.'
+      });
+    }
+
+    const { data: existing } = await supabase
+      .from('teachers')
+      .select('id')
+      .eq('user_id', user_id)
+      .single();
+
+    if (existing) {
+      return res.status(400).json({
+        error: 'This teacher user is already linked.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('teachers')
@@ -21,7 +39,9 @@ router.post(
         {
           first_name,
           last_name,
-          user_id
+          user_id,
+          department,
+          is_deleted: false
         }
       ])
       .select()
@@ -29,12 +49,12 @@ router.post(
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.status(201).json(data);
   }
 );
 
 /* ======================================================
-   GET ALL TEACHERS (WITH USER EMAIL)
+   GET ALL TEACHERS
 ====================================================== */
 router.get(
   '/',
@@ -48,17 +68,19 @@ router.get(
         id,
         first_name,
         last_name,
-        users(email)
+        department,
+        user_id,
+        users(email, full_name)
       `)
       .eq('is_deleted', false);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // ✅ Format clean response
     const formatted = data.map(t => ({
       id: t.id,
       full_name: `${t.first_name} ${t.last_name}`,
-      email: t.users?.email || '-'
+      email: t.users?.email || '-',
+      department: t.department || '-'
     }));
 
     res.json(formatted);
@@ -74,13 +96,20 @@ router.put(
   authorizeRoles('admin'),
   async (req, res) => {
     const { id } = req.params;
-    const { first_name, last_name } = req.body;
+    const { first_name, last_name, department } = req.body;
+
+    if (!first_name || !last_name || !department) {
+      return res.status(400).json({
+        error: 'All fields are required.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('teachers')
       .update({
         first_name,
         last_name,
+        department,
         updated_at: new Date()
       })
       .eq('id', id)
@@ -101,6 +130,7 @@ router.delete(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
 
     const { error } = await supabase
@@ -123,11 +153,15 @@ router.get(
   authorizeRoles('teacher'),
   async (req, res) => {
 
-    const { data: teacher } = await supabase
+    const { data: teacher, error } = await supabase
       .from('teachers')
       .select('id')
       .eq('user_id', req.user.id)
       .single();
+
+    if (!teacher) {
+      return res.status(404).json({ error: 'Teacher profile not found.' });
+    }
 
     const grades = await supabase
       .from('grades')
@@ -164,6 +198,7 @@ router.get(
         id,
         first_name,
         last_name,
+        department,
         users(email)
       `)
       .eq('user_id', req.user.id)
@@ -174,7 +209,8 @@ router.get(
     res.json({
       id: data.id,
       full_name: `${data.first_name} ${data.last_name}`,
-      email: data.users?.email || '-'
+      email: data.users?.email || '-',
+      department: data.department || '-'
     });
   }
 );
