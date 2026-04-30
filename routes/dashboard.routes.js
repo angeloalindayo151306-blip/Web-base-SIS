@@ -14,6 +14,7 @@ router.get(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const [students, teachers, parents, subjects, grades, attendance] =
       await Promise.all([
         supabase.from('students').select('*', { count: 'exact', head: true }),
@@ -25,15 +26,12 @@ router.get(
       ]);
 
     res.json({
-      message: 'Admin dashboard ✅',
-      totals: {
-        students: students.count || 0,
-        teachers: teachers.count || 0,
-        parents: parents.count || 0,
-        subjects: subjects.count || 0,
-        grades: grades.count || 0,
-        attendance_records: attendance.count || 0,
-      },
+      students: students.count || 0,
+      teachers: teachers.count || 0,
+      parents: parents.count || 0,
+      subjects: subjects.count || 0,
+      grades: grades.count || 0,
+      attendance: attendance.count || 0
     });
   }
 );
