@@ -13,11 +13,11 @@ router.post(
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
-    const { student_id, attendance_date, status } = req.body;
+    const { student_id, subject_id, attendance_date, status } = req.body;
 
     const { data, error } = await supabase
       .from('attendance')
-      .insert([{ student_id, attendance_date, status }])
+      .insert([{ student_id, subject_id, attendance_date, status }])
       .select()
       .single();
 
@@ -43,7 +43,8 @@ router.get(
           id,
           attendance_date,
           status,
-          students(first_name, last_name)
+          students(first_name, last_name),
+          subjects(name)
         `);
 
       // ✅ If student → show only their attendance
@@ -61,19 +62,16 @@ router.get(
         query = query.eq('student_id', student.id);
       }
 
-      // ✅ Admin sees all (no filter)
-
       const { data, error } = await query;
 
-      if (error) {
-        return res.status(500).json({ error: error.message });
-      }
+      if (error) return res.status(500).json({ error: error.message });
 
       const formatted = data.map(a => ({
         id: a.id,
         student_name: a.students
           ? `${a.students.first_name} ${a.students.last_name}`
           : '-',
+        subject_name: a.subjects?.name || '-',
         attendance_date: a.attendance_date,
         status: a.status
       }));
