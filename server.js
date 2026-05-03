@@ -12,6 +12,7 @@ const teacherRoutes = require('./routes/teacher.routes');
 const parentRoutes = require('./routes/parent.routes');
 const subjectRoutes = require('./routes/subject.routes');
 const schoolYearRoutes = require('./routes/schoolYear.routes');
+const enrollmentRoutes = require('./routes/enrollment.routes');
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/teachers', teacherRoutes);   // also fixed for consistency
 app.use('/api/parents', parentRoutes);     // ✅ FIXED HERE
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/school-years', schoolYearRoutes);
+app.use('/api/enrollments', enrollmentRoutes);
 
 const PORT = process.env.PORT || 5000;
 
