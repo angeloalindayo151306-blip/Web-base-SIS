@@ -94,7 +94,7 @@ router.get(
       .select(`
         id,
         status,
-        date,
+        created_at,
         students(first_name, last_name),
         subjects(name),
         teachers(first_name, last_name)
@@ -134,7 +134,7 @@ router.get(
         ? `${a.teachers.first_name} ${a.teachers.last_name}`
         : '-',
       status: a.status,
-      date: a.date
+      date: a.created_at
     }));
 
     res.json(formatted);
