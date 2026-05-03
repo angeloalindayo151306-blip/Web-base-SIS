@@ -13,12 +13,11 @@ router.post(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { first_name, last_name, user_id, department } = req.body;
 
     if (!first_name || !last_name || !user_id || !department) {
-      return res.status(400).json({
-        error: 'All fields are required.'
-      });
+      return res.status(400).json({ error: 'All fields are required.' });
     }
 
     const { data: existing } = await supabase
@@ -69,8 +68,7 @@ router.get(
         first_name,
         last_name,
         department,
-        user_id,
-        users(email, full_name)
+        users(email)
       `)
       .eq('is_deleted', false);
 
@@ -95,13 +93,12 @@ router.put(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
     const { first_name, last_name, department } = req.body;
 
     if (!first_name || !last_name || !department) {
-      return res.status(400).json({
-        error: 'All fields are required.'
-      });
+      return res.status(400).json({ error: 'All fields are required.' });
     }
 
     const { data, error } = await supabase
@@ -145,7 +142,7 @@ router.delete(
 );
 
 /* ======================================================
-   TEACHER DASHBOARD (FULL SIS VERSION)
+   TEACHER DASHBOARD (STRICT ENROLLMENT VERSION)
 ====================================================== */
 router.get(
   '/dashboard',
@@ -153,48 +150,46 @@ router.get(
   authorizeRoles('teacher'),
   async (req, res) => {
 
-    // ✅ Get teacher record
-    const { data: teacher } = await supabase
+    /* ✅ Get teacher record */
+    const { data: teacher, error: teacherError } = await supabase
       .from('teachers')
       .select('id, first_name, last_name, department')
       .eq('user_id', req.user.id)
       .single();
 
-    if (!teacher) {
-      return res.status(404).json({ error: 'Teacher profile not found.' });
+    if (teacherError || !teacher) {
+      return res.status(404).json({
+        error: 'Teacher profile not found.'
+      });
     }
 
-    /* ==============================
-       SUBJECTS ASSIGNED
-    ============================== */
-    const { data: subjects } = await supabase
+    /* ✅ Get assigned subjects */
+    const { data: subjects = [] } = await supabase
       .from('subjects')
       .select('id, name, semester')
       .eq('teacher_id', teacher.id);
 
     const subjectIds = subjects.map(s => s.id);
 
-    /* ==============================
-       STUDENTS HANDLED (UNIQUE)
-    ============================== */
-    const { data: studentRows } = await supabase
-      .from('grades')
-      .select('student_id')
-      .eq('teacher_id', teacher.id);
+    /* ✅ Get enrolled students (STRICT ENROLLMENT) */
+    let uniqueStudents = [];
 
-    const uniqueStudents = [...new Set(studentRows.map(s => s.student_id))];
+    if (subjectIds.length > 0) {
+      const { data: enrolled = [] } = await supabase
+        .from('subject_students')
+        .select('student_id')
+        .in('subject_id', subjectIds);
 
-    /* ==============================
-       GRADES COUNT
-    ============================== */
+      uniqueStudents = [...new Set(enrolled.map(s => s.student_id))];
+    }
+
+    /* ✅ Count grades */
     const { count: gradeCount } = await supabase
       .from('grades')
       .select('*', { count: 'exact', head: true })
       .eq('teacher_id', teacher.id);
 
-    /* ==============================
-       ATTENDANCE COUNT
-    ============================== */
+    /* ✅ Count attendance */
     const { count: attendanceCount } = await supabase
       .from('attendance')
       .select('*', { count: 'exact', head: true })
@@ -215,6 +210,7 @@ router.get(
     });
   }
 );
+
 /* ======================================================
    GET TEACHER PROFILE
 ====================================================== */

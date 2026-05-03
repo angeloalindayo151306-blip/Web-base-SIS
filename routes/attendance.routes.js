@@ -6,126 +6,138 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE ATTENDANCE (ADMIN / TEACHER)
+   CREATE ATTENDANCE (STRICT ENROLLMENT + OWNERSHIP)
 ====================================================== */
 router.post(
   '/',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
-    const { student_id, subject_id, attendance_date, status } = req.body;
+
+    const { student_id, subject_id, status, date } = req.body;
+
+    if (!student_id || !subject_id || !status || !date) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    let teacherId = null;
+
+    if (req.user.role === 'teacher') {
+
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      teacherId = teacher.id;
+
+      // ✅ Verify subject ownership
+      const { data: subject } = await supabase
+        .from('subjects')
+        .select('id')
+        .eq('id', subject_id)
+        .eq('teacher_id', teacherId)
+        .single();
+
+      if (!subject) {
+        return res.status(403).json({
+          error: 'You are not assigned to this subject.'
+        });
+      }
+    }
+
+    // ✅ Verify enrollment
+    const { data: enrollment } = await supabase
+      .from('subject_students')
+      .select('*')
+      .eq('subject_id', subject_id)
+      .eq('student_id', student_id)
+      .single();
+
+    if (!enrollment) {
+      return res.status(400).json({
+        error: 'Student is not enrolled in this subject.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('attendance')
-      .insert([{ student_id, subject_id, attendance_date, status }])
+      .insert([
+        {
+          student_id,
+          subject_id,
+          teacher_id: teacherId,
+          status,
+          date
+        }
+      ])
       .select()
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.status(201).json(data);
   }
 );
 
 /* ======================================================
    GET ATTENDANCE
-   Admin → All
-   Student → Own
 ====================================================== */
 router.get(
   '/',
   authenticateToken,
   async (req, res) => {
-    try {
-      let query = supabase
-        .from('attendance')
-        .select(`
-          id,
-          attendance_date,
-          status,
-          students(first_name, last_name),
-          subjects(name)
-        `);
 
-      // ✅ If student → show only their attendance
-      if (req.user.role === 'student') {
-        const { data: student, error: studentError } = await supabase
-          .from('students')
-          .select('id')
-          .eq('user_id', req.user.id)
-          .single();
+    let query = supabase
+      .from('attendance')
+      .select(`
+        id,
+        status,
+        date,
+        students(first_name, last_name),
+        subjects(name),
+        teachers(first_name, last_name)
+      `);
 
-        if (studentError) {
-          return res.status(400).json({ error: studentError.message });
-        }
+    if (req.user.role === 'teacher') {
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
 
-        query = query.eq('student_id', student.id);
-      }
-
-      const { data, error } = await query;
-
-      if (error) return res.status(500).json({ error: error.message });
-
-      const formatted = data.map(a => ({
-        id: a.id,
-        student_name: a.students
-          ? `${a.students.first_name} ${a.students.last_name}`
-          : '-',
-        subject_name: a.subjects?.name || '-',
-        attendance_date: a.attendance_date,
-        status: a.status
-      }));
-
-      res.json(formatted);
-
-    } catch (err) {
-      res.status(500).json({ error: 'Server error' });
+      query = query.eq('teacher_id', teacher.id);
     }
-  }
-);
 
-/* ======================================================
-   UPDATE ATTENDANCE (ADMIN ONLY)
-====================================================== */
-router.put(
-  '/:id',
-  authenticateToken,
-  authorizeRoles('admin'),
-  async (req, res) => {
-    const { id } = req.params;
-    const { attendance_date, status } = req.body;
+    if (req.user.role === 'student') {
+      const { data: student } = await supabase
+        .from('students')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
 
-    const { data, error } = await supabase
-      .from('attendance')
-      .update({ attendance_date, status })
-      .eq('id', id)
-      .select()
-      .single();
+      query = query.eq('student_id', student.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
-  }
-);
+    const formatted = data.map(a => ({
+      id: a.id,
+      student_name: a.students
+        ? `${a.students.first_name} ${a.students.last_name}`
+        : '-',
+      subject_name: a.subjects?.name || '-',
+      teacher_name: a.teachers
+        ? `${a.teachers.first_name} ${a.teachers.last_name}`
+        : '-',
+      status: a.status,
+      date: a.date
+    }));
 
-/* ======================================================
-   DELETE ATTENDANCE (ADMIN ONLY)
-====================================================== */
-router.delete(
-  '/:id',
-  authenticateToken,
-  authorizeRoles('admin'),
-  async (req, res) => {
-    const { id } = req.params;
-
-    const { error } = await supabase
-      .from('attendance')
-      .delete()
-      .eq('id', id);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    res.json({ message: 'Attendance deleted ✅' });
+    res.json(formatted);
   }
 );
 

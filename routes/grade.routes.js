@@ -6,33 +6,67 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE GRADE
-   Admin & Teacher
+   CREATE GRADE (STRICT ENROLLMENT + OWNERSHIP)
 ====================================================== */
 router.post(
   '/',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
+
     const { student_id, subject_id, grade_value, grading_period } = req.body;
+
+    if (!student_id || !subject_id || !grade_value || !grading_period) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
 
     let teacherId = null;
 
-    // ✅ If teacher, auto-detect teacher_id
     if (req.user.role === 'teacher') {
-      const { data: teacher, error: teacherError } = await supabase
+
+      // ✅ Get teacher ID
+      const { data: teacher } = await supabase
         .from('teachers')
         .select('id')
         .eq('user_id', req.user.id)
         .single();
 
-      if (teacherError) {
-        return res.status(400).json({ error: teacherError.message });
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher profile not found.' });
       }
 
       teacherId = teacher.id;
+
+      // ✅ Verify subject belongs to teacher
+      const { data: subject } = await supabase
+        .from('subjects')
+        .select('id')
+        .eq('id', subject_id)
+        .eq('teacher_id', teacherId)
+        .single();
+
+      if (!subject) {
+        return res.status(403).json({
+          error: 'You are not assigned to this subject.'
+        });
+      }
     }
 
+    // ✅ Verify student enrollment
+    const { data: enrollment } = await supabase
+      .from('subject_students')
+      .select('*')
+      .eq('subject_id', subject_id)
+      .eq('student_id', student_id)
+      .single();
+
+    if (!enrollment) {
+      return res.status(400).json({
+        error: 'Student is not enrolled in this subject.'
+      });
+    }
+
+    // ✅ Insert grade
     const { data, error } = await supabase
       .from('grades')
       .insert([
@@ -41,8 +75,7 @@ router.post(
           subject_id,
           teacher_id: teacherId,
           grade_value,
-          grading_period,
-          school_year_id: null
+          grading_period
         }
       ])
       .select()
@@ -50,15 +83,12 @@ router.post(
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.status(201).json(data);
   }
 );
 
 /* ======================================================
-   GET ALL GRADES
-   Admin → All
-   Teacher → Own
-   Student → Own
+   GET GRADES
 ====================================================== */
 router.get(
   '/',
@@ -76,7 +106,6 @@ router.get(
         teachers(first_name, last_name)
       `);
 
-    // ✅ Teacher filter
     if (req.user.role === 'teacher') {
       const { data: teacher } = await supabase
         .from('teachers')
@@ -87,7 +116,6 @@ router.get(
       query = query.eq('teacher_id', teacher.id);
     }
 
-    // ✅ Student filter
     if (req.user.role === 'student') {
       const { data: student } = await supabase
         .from('students')
@@ -102,7 +130,6 @@ router.get(
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // ✅ Format clean response
     const formatted = data.map(g => ({
       id: g.id,
       student_name: g.students
@@ -121,18 +148,21 @@ router.get(
 );
 
 /* ======================================================
-   UPDATE GRADE
-   Admin & Teacher (Own Only)
+   UPDATE GRADE (ADMIN OR OWNER)
 ====================================================== */
 router.put(
   '/:id',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
+
     const { id } = req.params;
     const { grade_value, grading_period } = req.body;
 
-    // ✅ If teacher, restrict update to own grades
+    if (!grade_value || !grading_period) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+
     if (req.user.role === 'teacher') {
       const { data: teacher } = await supabase
         .from('teachers')
@@ -153,7 +183,6 @@ router.put(
       return res.json(data);
     }
 
-    // ✅ Admin can update any
     const { data, error } = await supabase
       .from('grades')
       .update({ grade_value, grading_period })
@@ -168,14 +197,14 @@ router.put(
 );
 
 /* ======================================================
-   DELETE GRADE
-   Admin Only
+   DELETE GRADE (ADMIN ONLY)
 ====================================================== */
 router.delete(
   '/:id',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
 
     const { error } = await supabase
