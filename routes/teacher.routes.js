@@ -145,7 +145,7 @@ router.delete(
 );
 
 /* ======================================================
-   TEACHER DASHBOARD
+   TEACHER DASHBOARD (UPGRADED)
 ====================================================== */
 router.get(
   '/dashboard',
@@ -153,9 +153,16 @@ router.get(
   authorizeRoles('teacher'),
   async (req, res) => {
 
-    const { data: teacher, error } = await supabase
+    // ✅ Get teacher profile
+    const { data: teacher } = await supabase
       .from('teachers')
-      .select('id')
+      .select(`
+        id,
+        first_name,
+        last_name,
+        department,
+        users(email)
+      `)
       .eq('user_id', req.user.id)
       .single();
 
@@ -163,26 +170,48 @@ router.get(
       return res.status(404).json({ error: 'Teacher profile not found.' });
     }
 
-    const grades = await supabase
+    // ✅ Get assigned subjects
+    const { data: subjects } = await supabase
+      .from('subjects')
+      .select('id, name, semester')
+      .eq('teacher_id', teacher.id);
+
+    // ✅ Count grades
+    const { count: gradeCount } = await supabase
       .from('grades')
       .select('*', { count: 'exact', head: true })
       .eq('teacher_id', teacher.id);
 
-    const attendance = await supabase
+    // ✅ Count attendance
+    const { count: attendanceCount } = await supabase
       .from('attendance')
       .select('*', { count: 'exact', head: true })
       .eq('teacher_id', teacher.id);
 
+    // ✅ Unique students handled
+    const { data: students } = await supabase
+      .from('grades')
+      .select('student_id')
+      .eq('teacher_id', teacher.id);
+
+    const uniqueStudents = [...new Set(students.map(s => s.student_id))];
+
     res.json({
-      message: 'Teacher dashboard ✅',
+      profile: {
+        full_name: `${teacher.first_name} ${teacher.last_name}`,
+        email: teacher.users?.email || '-',
+        department: teacher.department || '-'
+      },
       totals: {
-        grades_encoded: grades.count || 0,
-        attendance_recorded: attendance.count || 0
-      }
+        subjects: subjects.length,
+        students: uniqueStudents.length,
+        grades: gradeCount || 0,
+        attendance: attendanceCount || 0
+      },
+      subjects
     });
   }
 );
-
 /* ======================================================
    GET TEACHER PROFILE
 ====================================================== */
