@@ -145,7 +145,7 @@ router.delete(
 );
 
 /* ======================================================
-   TEACHER DASHBOARD (UPGRADED)
+   TEACHER DASHBOARD (FULL SIS VERSION)
 ====================================================== */
 router.get(
   '/dashboard',
@@ -153,16 +153,10 @@ router.get(
   authorizeRoles('teacher'),
   async (req, res) => {
 
-    // ✅ Get teacher profile
+    // ✅ Get teacher record
     const { data: teacher } = await supabase
       .from('teachers')
-      .select(`
-        id,
-        first_name,
-        last_name,
-        department,
-        users(email)
-      `)
+      .select('id, first_name, last_name, department')
       .eq('user_id', req.user.id)
       .single();
 
@@ -170,36 +164,45 @@ router.get(
       return res.status(404).json({ error: 'Teacher profile not found.' });
     }
 
-    // ✅ Get assigned subjects
+    /* ==============================
+       SUBJECTS ASSIGNED
+    ============================== */
     const { data: subjects } = await supabase
       .from('subjects')
       .select('id, name, semester')
       .eq('teacher_id', teacher.id);
 
-    // ✅ Count grades
+    const subjectIds = subjects.map(s => s.id);
+
+    /* ==============================
+       STUDENTS HANDLED (UNIQUE)
+    ============================== */
+    const { data: studentRows } = await supabase
+      .from('grades')
+      .select('student_id')
+      .eq('teacher_id', teacher.id);
+
+    const uniqueStudents = [...new Set(studentRows.map(s => s.student_id))];
+
+    /* ==============================
+       GRADES COUNT
+    ============================== */
     const { count: gradeCount } = await supabase
       .from('grades')
       .select('*', { count: 'exact', head: true })
       .eq('teacher_id', teacher.id);
 
-    // ✅ Count attendance
+    /* ==============================
+       ATTENDANCE COUNT
+    ============================== */
     const { count: attendanceCount } = await supabase
       .from('attendance')
       .select('*', { count: 'exact', head: true })
       .eq('teacher_id', teacher.id);
 
-    // ✅ Unique students handled
-    const { data: students } = await supabase
-      .from('grades')
-      .select('student_id')
-      .eq('teacher_id', teacher.id);
-
-    const uniqueStudents = [...new Set(students.map(s => s.student_id))];
-
     res.json({
       profile: {
         full_name: `${teacher.first_name} ${teacher.last_name}`,
-        email: teacher.users?.email || '-',
         department: teacher.department || '-'
       },
       totals: {
