@@ -13,16 +13,24 @@ router.post(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-    const { name, teacher_id, school_year_id, semester } = req.body;
+
+    const { name, semester, teacher_id, school_year_id, course_id } = req.body;
+
+    if (!name || !semester || !course_id) {
+      return res.status(400).json({
+        error: 'Subject name, semester and course are required.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('subjects')
       .insert([
         {
           name,
+          semester,
           teacher_id: teacher_id || null,
           school_year_id,
-          semester
+          course_id
         }
       ])
       .select()
@@ -30,12 +38,12 @@ router.post(
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json(data);
+    res.status(201).json(data);
   }
 );
 
 /* ======================================================
-   GET ALL SUBJECTS (WITH RELATIONS)
+   GET ALL SUBJECTS (JOIN COURSE)
 ====================================================== */
 router.get(
   '/',
@@ -48,22 +56,28 @@ router.get(
         id,
         name,
         semester,
+        teacher_id,
+        school_year_id,
+        course_id,
         teachers(first_name, last_name),
-        school_years(name)
-      `)
-      .eq('is_deleted', false);
+        school_years(name),
+        courses(name)
+      `);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // ✅ Format clean response
     const formatted = data.map(s => ({
       id: s.id,
       name: s.name,
       semester: s.semester,
+      teacher_id: s.teacher_id,
+      school_year_id: s.school_year_id,
+      course_id: s.course_id,
       teacher_name: s.teachers
         ? `${s.teachers.first_name} ${s.teachers.last_name}`
         : 'Unassigned',
-      school_year: s.school_years?.name || '-'
+      school_year: s.school_years?.name || '-',
+      course_name: s.courses?.name || '-'
     }));
 
     res.json(formatted);
@@ -78,16 +92,24 @@ router.put(
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
-    const { name, teacher_id, school_year_id, semester } = req.body;
+    const { name, semester, teacher_id, school_year_id, course_id } = req.body;
+
+    if (!name || !semester || !course_id) {
+      return res.status(400).json({
+        error: 'Subject name, semester and course are required.'
+      });
+    }
 
     const { data, error } = await supabase
       .from('subjects')
       .update({
         name,
+        semester,
         teacher_id: teacher_id || null,
         school_year_id,
-        semester,
+        course_id,
         updated_at: new Date()
       })
       .eq('id', id)
@@ -101,23 +123,24 @@ router.put(
 );
 
 /* ======================================================
-   DELETE SUBJECT (SOFT DELETE)
+   DELETE SUBJECT
 ====================================================== */
 router.delete(
   '/:id',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
 
     const { error } = await supabase
       .from('subjects')
-      .update({ is_deleted: true })
+      .delete()
       .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ message: 'Subject deleted ✅ (soft delete)' });
+    res.json({ message: 'Subject deleted ✅' });
   }
 );
 

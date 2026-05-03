@@ -13,6 +13,8 @@ const parentRoutes = require('./routes/parent.routes');
 const subjectRoutes = require('./routes/subject.routes');
 const schoolYearRoutes = require('./routes/schoolYear.routes');
 const enrollmentRoutes = require('./routes/enrollment.routes');
+const departmentRoutes = require('./routes/departments.routes');
+const courseRoutes = require('./routes/courses.routes');
 
 const app = express();
 
@@ -35,6 +37,8 @@ app.use('/api/parents', parentRoutes);     // ✅ FIXED HERE
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/school-years', schoolYearRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/courses', courseRoutes);
 
 const PORT = process.env.PORT || 5000;
 
