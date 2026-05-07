@@ -21,9 +21,17 @@ const startAttendanceAutoMarker = require('./autoMarker');
 const app = express();
 
 /* ======================================================
-   MIDDLEWARE
+   ✅ PROPER CORS CONFIG (BEFORE ROUTES)
 ====================================================== */
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
+
+app.options('*', cors());
+
 app.use(express.json());
 
 /* ======================================================
@@ -51,25 +59,11 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/courses', courseRoutes);
 
 /* ======================================================
-   GLOBAL ERROR HANDLER (RECOMMENDED)
-====================================================== */
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.options('*', cors());
-
-/* ======================================================
    START SERVER
 ====================================================== */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-
-  // ✅ Start automatic absence marker
   startAttendanceAutoMarker();
 });
