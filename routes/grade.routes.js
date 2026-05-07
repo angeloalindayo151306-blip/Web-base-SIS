@@ -6,7 +6,7 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   CREATE GRADE (STRICT ENROLLMENT + OWNERSHIP)
+   CREATE GRADE (STRICT OFFERING + ENROLLMENT)
 ====================================================== */
 router.post(
   '/',
@@ -14,17 +14,19 @@ router.post(
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
 
-    const { student_id, subject_id, grade_value, grading_period } = req.body;
+    const { student_id, subject_offering_id, grade_value, grading_period } = req.body;
 
-    if (!student_id || !subject_id || !grade_value || !grading_period) {
-      return res.status(400).json({ error: 'All fields are required.' });
+    if (!student_id || !subject_offering_id || !grade_value || !grading_period) {
+      return res.status(400).json({
+        error: 'All fields are required.'
+      });
     }
 
     let teacherId = null;
 
+    // ✅ If Teacher, verify ownership of offering
     if (req.user.role === 'teacher') {
 
-      // ✅ Get teacher ID
       const { data: teacher } = await supabase
         .from('teachers')
         .select('id')
@@ -32,48 +34,49 @@ router.post(
         .single();
 
       if (!teacher) {
-        return res.status(404).json({ error: 'Teacher profile not found.' });
+        return res.status(404).json({
+          error: 'Teacher profile not found.'
+        });
       }
 
       teacherId = teacher.id;
 
-      // ✅ Verify subject belongs to teacher
-      const { data: subject } = await supabase
-        .from('subjects')
+      // ✅ Verify offering belongs to teacher
+      const { data: offering } = await supabase
+        .from('subject_offerings')
         .select('id')
-        .eq('id', subject_id)
+        .eq('id', subject_offering_id)
         .eq('teacher_id', teacherId)
         .single();
 
-      if (!subject) {
+      if (!offering) {
         return res.status(403).json({
-          error: 'You are not assigned to this subject.'
+          error: 'You are not assigned to this subject offering.'
         });
       }
     }
 
-    // ✅ Verify student enrollment
+    // ✅ Verify student is enrolled in offering
     const { data: enrollment } = await supabase
-      .from('subject_students')
+      .from('offering_enrollments')
       .select('*')
-      .eq('subject_id', subject_id)
       .eq('student_id', student_id)
+      .eq('subject_offering_id', subject_offering_id)
       .single();
 
     if (!enrollment) {
       return res.status(400).json({
-        error: 'Student is not enrolled in this subject.'
+        error: 'Student is not enrolled in this subject offering.'
       });
     }
 
-    // ✅ Insert grade
+    // ✅ Insert grade (offering-based)
     const { data, error } = await supabase
       .from('grades')
       .insert([
         {
           student_id,
-          subject_id,
-          teacher_id: teacherId,
+          subject_offering_id,
           grade_value,
           grading_period
         }
@@ -81,14 +84,18 @@ router.post(
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({
+        error: error.message
+      });
+    }
 
     res.status(201).json(data);
   }
 );
 
 /* ======================================================
-   GET GRADES
+   GET GRADES (ROLE FILTERED)
 ====================================================== */
 router.get(
   '/',
@@ -102,21 +109,30 @@ router.get(
         grade_value,
         grading_period,
         students(first_name, last_name),
-        subjects(name),
-        teachers(first_name, last_name)
+        subject_offerings(
+          semester,
+          year_level,
+          subjects(name),
+          teachers(first_name, last_name),
+          school_years(name)
+        )
       `);
 
+    // ✅ Teacher sees only own offerings
     if (req.user.role === 'teacher') {
+
       const { data: teacher } = await supabase
         .from('teachers')
         .select('id')
         .eq('user_id', req.user.id)
         .single();
 
-      query = query.eq('teacher_id', teacher.id);
+      query = query.eq('subject_offerings.teacher_id', teacher.id);
     }
 
+    // ✅ Student sees only own grades
     if (req.user.role === 'student') {
+
       const { data: student } = await supabase
         .from('students')
         .select('id')
@@ -128,17 +144,23 @@ router.get(
 
     const { data, error } = await query;
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({
+        error: error.message
+      });
+    }
 
     const formatted = data.map(g => ({
       id: g.id,
       student_name: g.students
         ? `${g.students.first_name} ${g.students.last_name}`
         : '-',
-      subject_name: g.subjects?.name || '-',
-      teacher_name: g.teachers
-        ? `${g.teachers.first_name} ${g.teachers.last_name}`
+      subject_name: g.subject_offerings?.subjects?.name || '-',
+      teacher_name: g.subject_offerings?.teachers
+        ? `${g.subject_offerings.teachers.first_name} ${g.subject_offerings.teachers.last_name}`
         : '-',
+      school_year: g.subject_offerings?.school_years?.name || '-',
+      semester: g.subject_offerings?.semester || '-',
       grade_value: g.grade_value,
       grading_period: g.grading_period
     }));
@@ -148,7 +170,7 @@ router.get(
 );
 
 /* ======================================================
-   UPDATE GRADE (ADMIN OR OWNER)
+   UPDATE GRADE
 ====================================================== */
 router.put(
   '/:id',
@@ -160,10 +182,13 @@ router.put(
     const { grade_value, grading_period } = req.body;
 
     if (!grade_value || !grading_period) {
-      return res.status(400).json({ error: 'All fields are required.' });
+      return res.status(400).json({
+        error: 'All fields are required.'
+      });
     }
 
     if (req.user.role === 'teacher') {
+
       const { data: teacher } = await supabase
         .from('teachers')
         .select('id')
@@ -174,11 +199,13 @@ router.put(
         .from('grades')
         .update({ grade_value, grading_period })
         .eq('id', id)
-        .eq('teacher_id', teacher.id)
+        .eq('subject_offerings.teacher_id', teacher.id)
         .select()
         .single();
 
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
 
       return res.json(data);
     }
@@ -190,7 +217,9 @@ router.put(
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
 
     res.json(data);
   }
@@ -212,7 +241,9 @@ router.delete(
       .delete()
       .eq('id', id);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
 
     res.json({ message: 'Grade deleted ✅' });
   }
