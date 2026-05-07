@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const supabase = require('../config/supabaseClient');
+const supabase = require('./config/supabaseClient');
 
 function startAttendanceAutoMarker() {
   // ✅ Runs every 5 minutes

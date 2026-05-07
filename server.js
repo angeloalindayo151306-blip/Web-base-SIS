@@ -16,7 +16,7 @@ const enrollmentRoutes = require('./routes/enrollment.routes');
 const departmentRoutes = require('./routes/departments.routes');
 const courseRoutes = require('./routes/courses.routes');
 
-const startAttendanceAutoMarker = require('./attendanceAutoMarker');
+const startAttendanceAutoMarker = require('./autoMarker');
 
 const app = express();
 
