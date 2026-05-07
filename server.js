@@ -54,13 +54,13 @@ app.use('/api/courses', courseRoutes);
    GLOBAL ERROR HANDLER (RECOMMENDED)
 ====================================================== */
 app.use(cors({
-  origin: [
-    'https://stackblitz.com',
-    'https://*.webcontainer.io',
-    'https://web-base-sis.onrender.com'
-  ],
-  credentials: true
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.options('*', cors());
 
 /* ======================================================
    START SERVER
