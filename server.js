@@ -53,12 +53,14 @@ app.use('/api/courses', courseRoutes);
 /* ======================================================
    GLOBAL ERROR HANDLER (RECOMMENDED)
 ====================================================== */
-app.use((err, req, res, next) => {
-  console.error('🔥 Global Error:', err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error'
-  });
-});
+app.use(cors({
+  origin: [
+    'https://stackblitz.com',
+    'https://*.webcontainer.io',
+    'https://web-base-sis.onrender.com'
+  ],
+  credentials: true
+}));
 
 /* ======================================================
    START SERVER
