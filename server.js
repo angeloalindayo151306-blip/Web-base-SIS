@@ -15,6 +15,7 @@ const schoolYearRoutes = require('./routes/schoolYear.routes');
 const enrollmentRoutes = require('./routes/enrollment.routes');
 const departmentRoutes = require('./routes/departments.routes');
 const courseRoutes = require('./routes/courses.routes');
+const subjectOfferingsRoutes = require('./routes/subjectOfferings.routes');
 
 const startAttendanceAutoMarker = require('./autoMarker');
 
@@ -57,6 +58,7 @@ app.use('/api/school-years', schoolYearRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/subject-offerings', subjectOfferingsRoutes);
 
 /* ======================================================
    START SERVER
