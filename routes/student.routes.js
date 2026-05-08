@@ -7,29 +7,57 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ======================================================
-   DELETE STUDENT
+GET ALL STUDENTS (JOIN USERS + COURSE + DEPARTMENT)
 ====================================================== */
-router.delete(
-  '/:id',
+router.get(
+  '/',
   authenticateToken,
-  authorizeRoles('admin'),
+  authorizeRoles('admin', 'teacher'),
   async (req, res) => {
 
-    const { id } = req.params;
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('students')
-      .delete()
-      .eq('id', id);
+      .select(`
+        id,
+        student_number,
+        first_name,
+        last_name,
+        year_level,
+        section,
+        qr_code_value,
+        status,
+        users(email),
+        courses (
+          id,
+          name,
+          departments (
+            id,
+            name
+          )
+        )
+      `)
+      .eq('status', 'active');
 
     if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ message: 'Student deleted ✅' });
+    const formatted = data.map(s => ({
+      id: s.id,
+      student_number: s.student_number,
+      full_name: `${s.first_name} ${s.last_name}`,
+      email: s.users?.email || '-',
+      year_level: s.year_level,
+      section: s.section,
+      course_name: s.courses?.name || '-',
+      department_name: s.courses?.departments?.name || '-',
+      qr_code_value: s.qr_code_value
+    }));
+
+    res.json(formatted);
   }
 );
 
 /* ======================================================
-   UPDATE STUDENT
+UPDATE STUDENT PROFILE DATA
 ====================================================== */
 router.put(
   '/:id',
@@ -38,7 +66,6 @@ router.put(
   async (req, res) => {
 
     const { id } = req.params;
-
     const {
       student_number,
       first_name,
@@ -74,104 +101,32 @@ router.put(
 );
 
 /* ======================================================
-   GET ALL STUDENTS (JOIN COURSE + DEPARTMENT)
+SOFT DELETE STUDENT
 ====================================================== */
-router.get(
-  '/',
-  authenticateToken,
-  authorizeRoles('admin', 'teacher'),
-  async (req, res) => {
-
-    const { data, error } = await supabase
-      .from('students')
-      .select(`
-        id,
-        student_number,
-        first_name,
-        last_name,
-        year_level,
-        section,
-        qr_code_value,
-        courses (
-          id,
-          name,
-          departments (
-            id,
-            name
-          )
-        )
-      `);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const formatted = data.map(s => ({
-      id: s.id,
-      student_number: s.student_number,
-      full_name: `${s.first_name} ${s.last_name}`,
-      year_level: s.year_level,
-      section: s.section,
-      course_name: s.courses?.name || '-',
-      department_name: s.courses?.departments?.name || '-',
-      qr_code_value: s.qr_code_value
-    }));
-
-    res.json(formatted);
-  }
-);
-
-/* ======================================================
-   CREATE STUDENT (WITH QR)
-====================================================== */
-router.post(
-  '/',
+router.delete(
+  '/:id',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
 
-    const {
-      user_id,
-      student_number,
-      first_name,
-      last_name,
-      course_id,
-      year_level,
-      section
-    } = req.body;
+    const { id } = req.params;
 
-    if (!user_id || !student_number || !first_name || !last_name || !course_id) {
-      return res.status(400).json({ error: 'Required fields missing.' });
-    }
-
-    const qr_code_value = `QR-${student_number}-${Date.now()}`;
-
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('students')
-      .insert([
-        {
-          user_id,
-          student_number,
-          first_name,
-          last_name,
-          course_id,
-          year_level,
-          section,
-          qr_code_value,
-          status: 'active'
-        }
-      ])
-      .select()
-      .single();
+      .update({
+        status: 'inactive',
+        updated_at: new Date()
+      })
+      .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
 
-    const qr_image = await QRCode.toDataURL(qr_code_value);
-
-    res.status(201).json({ student: data, qr_image });
+    res.json({ message: 'Student deactivated ✅' });
   }
 );
 
 /* ======================================================
-   DOWNLOAD QR
+DOWNLOAD QR CODE
 ====================================================== */
 router.get(
   '/:studentId/qr',
@@ -181,11 +136,15 @@ router.get(
 
     const { studentId } = req.params;
 
-    const { data: student } = await supabase
+    const { data: student, error } = await supabase
       .from('students')
       .select('first_name, last_name, qr_code_value')
       .eq('id', studentId)
       .single();
+
+    if (error || !student) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
 
     const qrBuffer = await QRCode.toBuffer(student.qr_code_value);
 
@@ -200,7 +159,7 @@ router.get(
 );
 
 /* ======================================================
-   STUDENT DASHBOARD
+STUDENT DASHBOARD
 ====================================================== */
 router.get(
   '/dashboard',

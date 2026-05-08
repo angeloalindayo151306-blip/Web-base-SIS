@@ -7,7 +7,7 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* =========================
-   CREATE USER
+CREATE USER + AUTO PROFILE
 ========================= */
 router.post(
   '/',
@@ -21,7 +21,6 @@ router.post(
         return res.status(400).json({ error: 'All fields are required.' });
       }
 
-      // ✅ Check duplicate email
       const { data: existing } = await supabase
         .from('users')
         .select('id')
@@ -34,7 +33,6 @@ router.post(
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // ✅ Insert user
       const { data: newUser, error: userError } = await supabase
         .from('users')
         .insert([{
@@ -48,74 +46,50 @@ router.post(
         .single();
 
       if (userError) {
-        console.error("User insert error:", userError);
         return res.status(500).json({ error: userError.message });
       }
 
-      console.log("✅ User created:", newUser.id);
-
-      // ✅ Split name safely
       const nameParts = full_name.trim().split(/\s+/);
       const first_name = nameParts[0];
       const last_name = nameParts.slice(1).join(' ') || '-';
 
-      // ✅ Create profile
-      let profileError = null;
-
       if (role === 'parent') {
-        console.log("➡ Creating parent profile...");
-        const { error } = await supabase
-          .from('parents')
-          .insert([{
-            user_id: newUser.id,
-            first_name,
-            last_name
-          }]);
-        profileError = error;
+        await supabase.from('parents').insert([{
+          user_id: newUser.id,
+          first_name,
+          last_name,
+          is_deleted: false
+        }]);
       }
 
       if (role === 'teacher') {
-        console.log("➡ Creating teacher profile...");
-        const { error } = await supabase
-          .from('teachers')
-          .insert([{
-            user_id: newUser.id,
-            first_name,
-            last_name
-          }]);
-        profileError = error;
+        await supabase.from('teachers').insert([{
+          user_id: newUser.id,
+          first_name,
+          last_name
+        }]);
       }
 
       if (role === 'student') {
-        console.log("➡ Creating student profile...");
-        const { error } = await supabase
-          .from('students')
-          .insert([{
-            user_id: newUser.id,
-            first_name,
-            last_name
-          }]);
-        profileError = error;
+        await supabase.from('students').insert([{
+          user_id: newUser.id,
+          first_name,
+          last_name,
+          status: 'active'
+        }]);
       }
-
-      if (profileError) {
-        console.error("Profile insert error:", profileError);
-        return res.status(500).json({ error: profileError.message });
-      }
-
-      console.log("✅ Profile created successfully");
 
       res.status(201).json(newUser);
 
     } catch (err) {
-      console.error("Server crash:", err);
+      console.error(err);
       res.status(500).json({ error: 'Server error' });
     }
   }
 );
 
 /* =========================
-   READ ALL USERS
+READ USERS
 ========================= */
 router.get(
   '/',
@@ -128,13 +102,12 @@ router.get(
       .order('created_at', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
-
     res.json(data);
   }
 );
 
 /* =========================
-   UPDATE USER
+UPDATE USER
 ========================= */
 router.put(
   '/:id',
@@ -154,48 +127,16 @@ router.put(
         updated_at: new Date()
       })
       .eq('id', id)
-      .select('id, full_name, email, role, is_active')
+      .select()
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
-
     res.json(data);
   }
 );
 
 /* =========================
-   RESET PASSWORD
-========================= */
-router.put(
-  '/:id/reset-password',
-  authenticateToken,
-  authorizeRoles('admin'),
-  async (req, res) => {
-    const { id } = req.params;
-    const { newPassword } = req.body;
-
-    if (!newPassword) {
-      return res.status(400).json({ error: 'New password required.' });
-    }
-
-    const hashed = await bcrypt.hash(newPassword, 10);
-
-    const { error } = await supabase
-      .from('users')
-      .update({
-        password_hash: hashed,
-        updated_at: new Date()
-      })
-      .eq('id', id);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    res.json({ message: 'Password reset successfully ✅' });
-  }
-);
-
-/* =========================
-   DEACTIVATE USER
+DEACTIVATE USER
 ========================= */
 router.delete(
   '/:id',
@@ -204,15 +145,10 @@ router.delete(
   async (req, res) => {
     const { id } = req.params;
 
-    const { error } = await supabase
+    await supabase
       .from('users')
-      .update({
-        is_active: false,
-        updated_at: new Date()
-      })
+      .update({ is_active: false })
       .eq('id', id);
-
-    if (error) return res.status(500).json({ error: error.message });
 
     res.json({ message: 'User deactivated ✅' });
   }
