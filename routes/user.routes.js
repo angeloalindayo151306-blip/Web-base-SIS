@@ -20,7 +20,7 @@ router.post(
       return res.status(400).json({ error: 'All fields are required.' });
     }
 
-    // Check duplicate email
+    // ✅ Check duplicate email
     const { data: existing } = await supabase
       .from('users')
       .select('id')
@@ -33,7 +33,8 @@ router.post(
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const { data, error } = await supabase
+    // ✅ 1️⃣ Insert into users table
+    const { data: newUser, error: userError } = await supabase
       .from('users')
       .insert([{
         full_name,
@@ -45,9 +46,42 @@ router.post(
       .select('id, full_name, email, role, is_active')
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (userError) {
+      return res.status(500).json({ error: userError.message });
+    }
 
-    res.status(201).json(data);
+    // ✅ 2️⃣ AUTO-CREATE PROFILE BASED ON ROLE
+    if (role === 'parent') {
+      const { error } = await supabase
+        .from('parents')
+        .insert([{ user_id: newUser.id }]);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+    }
+
+    if (role === 'teacher') {
+      const { error } = await supabase
+        .from('teachers')
+        .insert([{ user_id: newUser.id }]);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+    }
+
+    if (role === 'student') {
+      const { error } = await supabase
+        .from('students')
+        .insert([{ user_id: newUser.id }]);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+    }
+
+    res.status(201).json(newUser);
   }
 );
 
