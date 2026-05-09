@@ -12,7 +12,6 @@ router.get(
   '/',
   authenticateToken,
   async (req, res) => {
-
     const { data, error } = await supabase
       .from('subject_offerings')
       .select(`
@@ -20,12 +19,18 @@ router.get(
         semester,
         start_time,
         end_time,
+        subject_id,
+        teacher_id,
+        school_year_id,
         subjects(name),
         teachers(first_name, last_name),
         school_years(name)
-      `);
+      `)
+      .order('created_at', { ascending: false });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
 
     const formatted = data.map(o => ({
       id: o.id,
@@ -63,7 +68,7 @@ router.post(
 
     if (!subject_id || !teacher_id || !school_year_id || !semester) {
       return res.status(400).json({
-        error: 'Required fields missing.'
+        error: 'Subject, Teacher, School Year, and Semester are required.'
       });
     }
 
@@ -80,9 +85,50 @@ router.post(
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+
+      // ✅ Friendly error for duplicate subject per semester
+      if (error.message.includes('unique_subject_per_semester')) {
+        return res.status(400).json({
+          error: 'This subject already has an offering for this semester and school year.'
+        });
+      }
+
+      // ✅ Friendly error for teacher schedule conflict
+      if (error.message.includes('unique_teacher_schedule')) {
+        return res.status(400).json({
+          error: 'This teacher already has an offering for this subject and semester.'
+        });
+      }
+
+      return res.status(500).json({ error: error.message });
+    }
 
     res.status(201).json(data);
+  }
+);
+
+/* ==========================================
+   DELETE OFFERING
+========================================== */
+router.delete(
+  '/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('subject_offerings')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({ message: 'Offering deleted ✅' });
   }
 );
 
