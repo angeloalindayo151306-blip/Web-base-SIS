@@ -12,11 +12,10 @@ const teacherRoutes = require('./routes/teacher.routes');
 const parentRoutes = require('./routes/parent.routes');
 const subjectRoutes = require('./routes/subject.routes');
 const schoolYearRoutes = require('./routes/schoolYear.routes');
-const enrollmentRoutes = require('./routes/enrollment.routes');
 const departmentRoutes = require('./routes/departments.routes');
 const courseRoutes = require('./routes/courses.routes');
 const subjectOfferingsRoutes = require('./routes/subjectOfferings.routes');
-const studentEnrollmentRoutes = require('./routes/studentEnrollment.routes');
+const studentEnrollmentRoutes = require('./routes/studentEnrollment.routes'); // ✅ ONLY THIS ONE
 
 const startAttendanceAutoMarker = require('./autoMarker');
 
@@ -56,12 +55,12 @@ app.use('/api/teachers', teacherRoutes);
 app.use('/api/parents', parentRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/school-years', schoolYearRoutes);
-app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/subject-offerings', subjectOfferingsRoutes);
-app.use('/api/student-enrollments', studentEnrollmentRoutes);
 
+/* ✅ FIXED ENROLLMENT ROUTE */
+app.use('/api/enrollments', studentEnrollmentRoutes);
 
 /* ======================================================
    START SERVER
