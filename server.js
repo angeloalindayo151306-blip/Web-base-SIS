@@ -16,6 +16,7 @@ const enrollmentRoutes = require('./routes/enrollment.routes');
 const departmentRoutes = require('./routes/departments.routes');
 const courseRoutes = require('./routes/courses.routes');
 const subjectOfferingsRoutes = require('./routes/subjectOfferings.routes');
+const studentEnrollmentRoutes = require('./routes/studentEnrollment.routes');
 
 const startAttendanceAutoMarker = require('./autoMarker');
 
@@ -59,6 +60,8 @@ app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/subject-offerings', subjectOfferingsRoutes);
+app.use('/api/student-enrollments', studentEnrollmentRoutes);
+
 
 /* ======================================================
    START SERVER
