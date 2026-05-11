@@ -6,37 +6,58 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ==========================================
-   GET ATTENDANCE BY OFFERING
+   GET TODAY CLASS STATUS
 ========================================== */
 router.get(
-  '/:offering_id/:date',
+  '/class-status/:offering_id',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
 
-    const { offering_id, date } = req.params;
+    const { offering_id } = req.params;
+    const today = new Date().toISOString().split('T')[0];
 
-    const { data, error } = await supabase
-      .from('attendance')
+    // ✅ Get all enrolled students
+    const { data: enrollments, error: enrollError } = await supabase
+      .from('offering_enrollments')
       .select(`
         id,
-        status,
-        attendance_date,
-        offering_enrollments(
-          students(first_name, last_name)
-        )
+        students(first_name, last_name)
       `)
-      .eq('attendance_date', date)
-      .eq('offering_enrollments.offering_id', offering_id);
+      .eq('offering_id', offering_id);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (enrollError) {
+      return res.status(500).json({ error: enrollError.message });
+    }
 
-    res.json(data);
+    const enrollmentIds = enrollments.map(e => e.id);
+
+    // ✅ Get today's attendance
+    const { data: attendanceToday } = await supabase
+      .from('attendance')
+      .select('offering_enrollment_id')
+      .in('offering_enrollment_id', enrollmentIds)
+      .eq('attendance_date', today);
+
+    const presentIds = attendanceToday.map(a => a.offering_enrollment_id);
+
+    const result = enrollments.map(e => ({
+      enrollment_id: e.id,
+      first_name: e.students?.first_name,
+      last_name: e.students?.last_name,
+      present: presentIds.includes(e.id)
+    }));
+
+    res.json({
+      total: enrollments.length,
+      present: presentIds.length,
+      students: result
+    });
   }
 );
 
 /* ==========================================
-   MARK ATTENDANCE (QR READY)
+   MARK ATTENDANCE
 ========================================== */
 router.post(
   '/',
@@ -47,36 +68,39 @@ router.post(
     const { qr_code_value, offering_id } = req.body;
 
     if (!qr_code_value || !offering_id) {
-      return res.status(400).json({ error: 'QR and offering required.' });
+      return res.status(400).json({
+        error: 'QR and offering required.'
+      });
     }
 
-    // ✅ Find student by QR
-    const { data: student, error: studentError } = await supabase
+    const { data: student } = await supabase
       .from('students')
       .select('id, first_name, last_name')
       .eq('qr_code_value', qr_code_value)
       .single();
 
-    if (studentError || !student) {
-      return res.status(404).json({ error: 'Student not found.' });
+    if (!student) {
+      return res.status(404).json({
+        error: 'Student not found.'
+      });
     }
 
-    // ✅ Check enrollment
-    const { data: enrollment, error: enrollError } = await supabase
+    const { data: enrollment } = await supabase
       .from('offering_enrollments')
       .select('id')
       .eq('student_id', student.id)
       .eq('offering_id', offering_id)
       .single();
 
-    if (enrollError || !enrollment) {
-      return res.status(400).json({ error: 'Student not enrolled in this class.' });
+    if (!enrollment) {
+      return res.status(400).json({
+        error: 'Student not enrolled in this class.'
+      });
     }
 
     const today = new Date().toISOString().split('T')[0];
 
-    // ✅ Insert attendance
-    const { error: insertError } = await supabase
+    const { error } = await supabase
       .from('attendance')
       .insert([{
         offering_enrollment_id: enrollment.id,
@@ -84,11 +108,16 @@ router.post(
         status: 'present'
       }]);
 
-    if (insertError) {
-      if (insertError.code === '23505') {
-        return res.status(400).json({ error: 'Already marked today.' });
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({
+          error: 'Already marked today.'
+        });
       }
-      return res.status(500).json({ error: insertError.message });
+
+      return res.status(500).json({
+        error: error.message
+      });
     }
 
     res.json({
