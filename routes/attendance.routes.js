@@ -5,232 +5,95 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 
 const router = express.Router();
 
-/* ======================================================
-   RECORD ATTENDANCE (AUTO STATUS LOGIC)
-====================================================== */
-router.post(
-  '/',
+/* ==========================================
+   GET ATTENDANCE BY OFFERING
+========================================== */
+router.get(
+  '/:offering_id/:date',
   authenticateToken,
   authorizeRoles('admin', 'teacher'),
   async (req, res) => {
 
-    const { student_id, subject_offering_id } = req.body;
+    const { offering_id, date } = req.params;
 
-    if (!student_id || !subject_offering_id) {
-      return res.status(400).json({
-        error: 'Student and subject offering are required.'
-      });
-    }
-
-    try {
-
-      let teacherId = null;
-
-      /* ✅ VERIFY TEACHER OWNERSHIP */
-      if (req.user.role === 'teacher') {
-
-        const { data: teacher } = await supabase
-          .from('teachers')
-          .select('id')
-          .eq('user_id', req.user.id)
-          .single();
-
-        if (!teacher) {
-          return res.status(404).json({
-            error: 'Teacher profile not found.'
-          });
-        }
-
-        teacherId = teacher.id;
-
-        const { data: offeringCheck } = await supabase
-          .from('subject_offerings')
-          .select('id')
-          .eq('id', subject_offering_id)
-          .eq('teacher_id', teacherId)
-          .single();
-
-        if (!offeringCheck) {
-          return res.status(403).json({
-            error: 'You are not assigned to this subject offering.'
-          });
-        }
-      }
-
-      /* ✅ VERIFY STUDENT ENROLLMENT */
-      const { data: enrollment } = await supabase
-        .from('offering_enrollments')
-        .select('*')
-        .eq('student_id', student_id)
-        .eq('subject_offering_id', subject_offering_id)
-        .single();
-
-      if (!enrollment) {
-        return res.status(400).json({
-          error: 'Student is not enrolled in this subject offering.'
-        });
-      }
-
-      /* ✅ GET OFFERING SCHEDULE */
-      const { data: offering } = await supabase
-        .from('subject_offerings')
-        .select('start_time, end_time, late_threshold_minutes')
-        .eq('id', subject_offering_id)
-        .single();
-
-      if (!offering) {
-        return res.status(404).json({
-          error: 'Subject offering schedule not found.'
-        });
-      }
-
-      /* ✅ DETERMINE STATUS AUTOMATICALLY */
-      const now = new Date();
-      const today = now.toISOString().split('T')[0];
-
-      const classStart = new Date(`${today}T${offering.start_time}`);
-      const classEnd = new Date(`${today}T${offering.end_time}`);
-
-      const lateLimit = new Date(
-        classStart.getTime() + (offering.late_threshold_minutes || 15) * 60000
-      );
-
-      let finalStatus = 'Absent';
-
-      if (now <= lateLimit) {
-        finalStatus = 'Present';
-      } else if (now > lateLimit && now <= classEnd) {
-        finalStatus = 'Late';
-      } else {
-        finalStatus = 'Absent';
-      }
-
-      /* ✅ INSERT ATTENDANCE */
-      const { data, error } = await supabase
-        .from('attendance')
-        .insert([
-          {
-            student_id,
-            subject_offering_id,
-            attendance_date: today,
-            status: finalStatus
-          }
-        ])
-        .select()
-        .single();
-
-      if (error) {
-        return res.status(500).json({
-          error: error.message
-        });
-      }
-
-      res.status(201).json(data);
-
-    } catch (err) {
-      res.status(500).json({
-        error: err.message
-      });
-    }
-  }
-);
-
-/* ======================================================
-   GET ATTENDANCE (ROLE FILTERED)
-====================================================== */
-router.get(
-  '/',
-  authenticateToken,
-  async (req, res) => {
-
-    let query = supabase
+    const { data, error } = await supabase
       .from('attendance')
       .select(`
         id,
-        attendance_date,
         status,
-        students(first_name, last_name),
-        subject_offerings(
-          semester,
-          year_level,
-          subjects(name),
-          teachers(first_name, last_name),
-          school_years(name)
+        attendance_date,
+        offering_enrollments(
+          students(first_name, last_name)
         )
-      `);
+      `)
+      .eq('attendance_date', date)
+      .eq('offering_enrollments.offering_id', offering_id);
 
-    /* ✅ TEACHER FILTER */
-    if (req.user.role === 'teacher') {
+    if (error) return res.status(500).json({ error: error.message });
 
-      const { data: teacher } = await supabase
-        .from('teachers')
-        .select('id')
-        .eq('user_id', req.user.id)
-        .single();
-
-      query = query.eq('subject_offerings.teacher_id', teacher.id);
-    }
-
-    /* ✅ STUDENT FILTER */
-    if (req.user.role === 'student') {
-
-      const { data: student } = await supabase
-        .from('students')
-        .select('id')
-        .eq('user_id', req.user.id)
-        .single();
-
-      query = query.eq('student_id', student.id);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return res.status(500).json({
-        error: error.message
-      });
-    }
-
-    const formatted = data.map(a => ({
-      id: a.id,
-      student_name: a.students
-        ? `${a.students.first_name} ${a.students.last_name}`
-        : '-',
-      subject_name: a.subject_offerings?.subjects?.name || '-',
-      teacher_name: a.subject_offerings?.teachers
-        ? `${a.subject_offerings.teachers.first_name} ${a.subject_offerings.teachers.last_name}`
-        : '-',
-      school_year: a.subject_offerings?.school_years?.name || '-',
-      semester: a.subject_offerings?.semester || '-',
-      attendance_date: a.attendance_date,
-      status: a.status
-    }));
-
-    res.json(formatted);
+    res.json(data);
   }
 );
 
-/* ======================================================
-   DELETE ATTENDANCE (ADMIN ONLY)
-====================================================== */
-router.delete(
-  '/:id',
+/* ==========================================
+   MARK ATTENDANCE (QR READY)
+========================================== */
+router.post(
+  '/',
   authenticateToken,
-  authorizeRoles('admin'),
+  authorizeRoles('teacher'),
   async (req, res) => {
 
-    const { id } = req.params;
+    const { qr_code_value, offering_id } = req.body;
 
-    const { error } = await supabase
-      .from('attendance')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
+    if (!qr_code_value || !offering_id) {
+      return res.status(400).json({ error: 'QR and offering required.' });
     }
 
-    res.json({ message: 'Attendance deleted ✅' });
+    // ✅ Find student by QR
+    const { data: student, error: studentError } = await supabase
+      .from('students')
+      .select('id, first_name, last_name')
+      .eq('qr_code_value', qr_code_value)
+      .single();
+
+    if (studentError || !student) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+
+    // ✅ Check enrollment
+    const { data: enrollment, error: enrollError } = await supabase
+      .from('offering_enrollments')
+      .select('id')
+      .eq('student_id', student.id)
+      .eq('offering_id', offering_id)
+      .single();
+
+    if (enrollError || !enrollment) {
+      return res.status(400).json({ error: 'Student not enrolled in this class.' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // ✅ Insert attendance
+    const { error: insertError } = await supabase
+      .from('attendance')
+      .insert([{
+        offering_enrollment_id: enrollment.id,
+        attendance_date: today,
+        status: 'present'
+      }]);
+
+    if (insertError) {
+      if (insertError.code === '23505') {
+        return res.status(400).json({ error: 'Already marked today.' });
+      }
+      return res.status(500).json({ error: insertError.message });
+    }
+
+    res.json({
+      message: `${student.first_name} ${student.last_name} marked present.`
+    });
   }
 );
 
