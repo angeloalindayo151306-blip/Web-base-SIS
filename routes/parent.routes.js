@@ -2,10 +2,11 @@ const express = require('express');
 const supabase = require('../config/supabaseClient');
 const authenticateToken = require('../middleware/authenticateToken');
 const authorizeRoles = require('../middleware/authorizeRoles');
+
 const router = express.Router();
 
 /* =========================
-GET ALL PARENTS
+   GET ALL PARENTS (ADMIN)
 ========================= */
 router.get(
   '/',
@@ -43,13 +44,14 @@ router.get(
 );
 
 /* =========================
-UPDATE LINKED STUDENTS
+   UPDATE LINKED STUDENTS
 ========================= */
 router.put(
   '/:id',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
+
     const { id } = req.params;
     const { student_ids = [] } = req.body;
 
@@ -71,7 +73,81 @@ router.put(
 );
 
 /* =========================
-SOFT DELETE
+   PARENT DASHBOARD
+========================= */
+router.get(
+  '/dashboard',
+  authenticateToken,
+  authorizeRoles('parent'),
+  async (req, res) => {
+
+    try {
+
+      // ✅ Get parent profile
+      const { data: parent } = await supabase
+        .from('parents')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (!parent) {
+        return res.status(404).json({ error: 'Parent profile not found.' });
+      }
+
+      // ✅ Get linked students
+      const { data: links } = await supabase
+        .from('parent_students')
+        .select(`
+          student_id,
+          students(first_name, last_name)
+        `)
+        .eq('parent_id', parent.id);
+
+      const result = [];
+
+      for (const link of links) {
+
+        // ✅ Get enrollments
+        const { data: enrollments } = await supabase
+          .from('offering_enrollments')
+          .select('id')
+          .eq('student_id', link.student_id);
+
+        const enrollmentIds = enrollments.map(e => e.id);
+
+        // ✅ Attendance count
+        const { count: totalAttendance } = await supabase
+          .from('attendance')
+          .select('*', { count: 'exact', head: true })
+          .in('offering_enrollment_id', enrollmentIds);
+
+        const { count: presentCount } = await supabase
+          .from('attendance')
+          .select('*', { count: 'exact', head: true })
+          .in('offering_enrollment_id', enrollmentIds)
+          .eq('status', 'present');
+
+        const percentage = totalAttendance > 0
+          ? Math.round((presentCount / totalAttendance) * 100)
+          : 0;
+
+        result.push({
+          student_id: link.student_id,
+          name: `${link.students.first_name} ${link.students.last_name}`,
+          attendance_percentage: percentage
+        });
+      }
+
+      res.json(result);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+/* =========================
+   SOFT DELETE
 ========================= */
 router.delete(
   '/:id',
