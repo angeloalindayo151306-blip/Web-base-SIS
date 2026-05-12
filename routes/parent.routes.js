@@ -94,12 +94,20 @@ router.get(
         return res.status(404).json({ error: 'Parent profile not found.' });
       }
 
-      // ✅ Get linked students
+      // ✅ Get linked students with course & department
       const { data: links } = await supabase
         .from('parent_students')
         .select(`
           student_id,
-          students(first_name, last_name)
+          students(
+            id,
+            first_name,
+            last_name,
+            courses(
+              name,
+              departments(name)
+            )
+          )
         `)
         .eq('parent_id', parent.id);
 
@@ -107,15 +115,23 @@ router.get(
 
       for (const link of links) {
 
-        // ✅ Get enrollments
+        const student = link.students;
+
+        // ✅ Get enrollments with subject info
         const { data: enrollments } = await supabase
           .from('offering_enrollments')
-          .select('id')
+          .select(`
+            id,
+            subject_offerings(
+              semester,
+              subjects(name)
+            )
+          `)
           .eq('student_id', link.student_id);
 
-        const enrollmentIds = enrollments.map(e => e.id);
+        const enrollmentIds = (enrollments || []).map(e => e.id);
 
-        // ✅ Attendance count
+        // ✅ Attendance counts
         const { count: totalAttendance } = await supabase
           .from('attendance')
           .select('*', { count: 'exact', head: true })
@@ -131,10 +147,21 @@ router.get(
           ? Math.round((presentCount / totalAttendance) * 100)
           : 0;
 
+        // ✅ Safe subject list
+        const subjects = (enrollments || []).map(e => ({
+          name: e.subject_offerings?.subjects?.name || '-',
+          semester: e.subject_offerings?.semester || '-'
+        }));
+
         result.push({
           student_id: link.student_id,
-          name: `${link.students.first_name} ${link.students.last_name}`,
-          attendance_percentage: percentage
+          name: `${student.first_name} ${student.last_name}`,
+          department: student?.courses?.departments?.name || '-',
+          course: student?.courses?.name || '-',
+          enrollment_status: subjects.length > 0 ? 'Enrolled' : 'Not Enrolled',
+          semester: subjects[0]?.semester || '-',
+          attendance_percentage: percentage,
+          subjects: subjects || []
         });
       }
 
