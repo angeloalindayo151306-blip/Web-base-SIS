@@ -55,7 +55,8 @@ router.put(
     const { id } = req.params;
     const { student_ids = [] } = req.body;
 
-    await supabase.from('parent_students')
+    await supabase
+      .from('parent_students')
       .delete()
       .eq('parent_id', id);
 
@@ -83,7 +84,6 @@ router.get(
 
     try {
 
-      // ✅ Get parent profile
       const { data: parent } = await supabase
         .from('parents')
         .select('id')
@@ -94,7 +94,6 @@ router.get(
         return res.status(404).json({ error: 'Parent profile not found.' });
       }
 
-      // ✅ Get linked students with course & department
       const { data: links } = await supabase
         .from('parent_students')
         .select(`
@@ -113,7 +112,7 @@ router.get(
 
       const result = [];
 
-      for (const link of links) {
+      for (const link of links || []) {
 
         const student = link.students;
 
@@ -131,7 +130,7 @@ router.get(
 
         const enrollmentIds = (enrollments || []).map(e => e.id);
 
-        // ✅ Attendance counts
+        // ✅ Attendance calculation
         const { count: totalAttendance } = await supabase
           .from('attendance')
           .select('*', { count: 'exact', head: true })
@@ -143,15 +142,41 @@ router.get(
           .in('offering_enrollment_id', enrollmentIds)
           .eq('status', 'present');
 
-        const percentage = totalAttendance > 0
-          ? Math.round((presentCount / totalAttendance) * 100)
-          : 0;
+        const attendance_percentage =
+          totalAttendance > 0
+            ? Math.round((presentCount / totalAttendance) * 100)
+            : 0;
 
-        // ✅ Safe subject list
-        const subjects = (enrollments || []).map(e => ({
-          name: e.subject_offerings?.subjects?.name || '-',
-          semester: e.subject_offerings?.semester || '-'
-        }));
+        // ✅ Get grades
+        const { data: grades } = await supabase
+          .from('grades')
+          .select(`
+            prelim,
+            midterm,
+            finals,
+            final_grade,
+            status,
+            offering_enrollment_id
+          `)
+          .in('offering_enrollment_id', enrollmentIds);
+
+        // ✅ Build subjects with grades
+        const subjects = (enrollments || []).map(e => {
+
+          const gradeRecord = grades?.find(
+            g => g.offering_enrollment_id === e.id
+          );
+
+          return {
+            name: e.subject_offerings?.subjects?.name || '-',
+            semester: e.subject_offerings?.semester || '-',
+            prelim: gradeRecord?.prelim ?? '-',
+            midterm: gradeRecord?.midterm ?? '-',
+            finals: gradeRecord?.finals ?? '-',
+            final_grade: gradeRecord?.final_grade ?? '-',
+            status: gradeRecord?.status ?? ''
+          };
+        });
 
         result.push({
           student_id: link.student_id,
@@ -160,8 +185,8 @@ router.get(
           course: student?.courses?.name || '-',
           enrollment_status: subjects.length > 0 ? 'Enrolled' : 'Not Enrolled',
           semester: subjects[0]?.semester || '-',
-          attendance_percentage: percentage,
-          subjects: subjects || []
+          attendance_percentage,
+          subjects
         });
       }
 
