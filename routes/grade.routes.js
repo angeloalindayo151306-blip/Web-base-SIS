@@ -6,7 +6,7 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ==========================================
-   GET GRADES (TEACHER VIEW)
+   GET GRADES
 ========================================== */
 router.get(
   '/',
@@ -14,51 +14,34 @@ router.get(
   authorizeRoles('teacher', 'admin'),
   async (req, res) => {
 
-    try {
-
-      const { data, error } = await supabase
-        .from('grades')
-        .select(`
+    const { data, error } = await supabase
+      .from('grades')
+      .select(`
+        id,
+        prelim,
+        midterm,
+        finals,
+        final_grade,
+        status,
+        is_locked,
+        offering_enrollments(
           id,
-          prelim,
-          midterm,
-          finals,
-          final_grade,
-          offering_enrollments(
-            id,
-            students(first_name, last_name),
-            subject_offerings(
-              semester,
-              subjects(name)
-            )
+          students(first_name, last_name),
+          subject_offerings(
+            semester,
+            subjects(name)
           )
-        `);
+        )
+      `);
 
-      if (error) {
-        return res.status(500).json({ error: error.message });
-      }
+    if (error) return res.status(500).json({ error: error.message });
 
-      const formatted = data.map(g => ({
-        id: g.id,
-        student_name: `${g.offering_enrollments?.students?.first_name || ''} ${g.offering_enrollments?.students?.last_name || ''}`,
-        subject_name: g.offering_enrollments?.subject_offerings?.subjects?.name || '-',
-        semester: g.offering_enrollments?.subject_offerings?.semester || '-',
-        prelim: g.prelim,
-        midterm: g.midterm,
-        finals: g.finals,
-        final_grade: g.final_grade
-      }));
-
-      res.json(formatted);
-
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
+    res.json(data);
   }
 );
 
 /* ==========================================
-   SAVE / UPDATE GRADE
+   SAVE / UPDATE GRADE (TEACHER ONLY IF NOT LOCKED)
 ========================================== */
 router.post(
   '/',
@@ -73,34 +56,87 @@ router.post(
       finals
     } = req.body;
 
-    if (!offering_enrollment_id) {
-      return res.status(400).json({
-        error: 'Enrollment ID required.'
+    // ✅ Check if grade already exists
+    const { data: existing } = await supabase
+      .from('grades')
+      .select('is_locked')
+      .eq('offering_enrollment_id', offering_enrollment_id)
+      .single();
+
+    if (existing?.is_locked) {
+      return res.status(403).json({
+        error: 'Grade is locked. Contact admin.'
       });
     }
 
-    const final_grade =
-      (Number(prelim || 0) +
-       Number(midterm || 0) +
-       Number(finals || 0)) / 3;
+    const p = Number(prelim || 0);
+    const m = Number(midterm || 0);
+    const f = Number(finals || 0);
+
+    const final_grade = Math.round((p + m + f) / 3);
+    const status = final_grade >= 75 ? 'Passed' : 'Failed';
 
     const { data, error } = await supabase
       .from('grades')
       .upsert([{
         offering_enrollment_id,
-        prelim,
-        midterm,
-        finals,
-        final_grade
+        prelim: p,
+        midterm: m,
+        finals: f,
+        final_grade,
+        status,
+        is_locked: false
       }])
       .select()
       .single();
 
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
 
     res.json(data);
+  }
+);
+
+/* ==========================================
+   LOCK GRADE (TEACHER)
+========================================== */
+router.post(
+  '/lock/:id',
+  authenticateToken,
+  authorizeRoles('teacher'),
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('grades')
+      .update({ is_locked: true })
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'Grade locked ✅' });
+  }
+);
+
+/* ==========================================
+   UNLOCK GRADE (ADMIN ONLY)
+========================================== */
+router.post(
+  '/unlock/:id',
+  authenticateToken,
+  authorizeRoles('admin'),
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('grades')
+      .update({ is_locked: false })
+      .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ message: 'Grade unlocked ✅' });
   }
 );
 
