@@ -80,6 +80,7 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/subject-offerings', subjectOfferingsRoutes);
 app.use('/api/enrollments', studentEnrollmentRoutes);
+app.use('/api/curriculum', require('./routes/curriculum.routes'));
 
 /* ======================================================
    ✅ START SERVER
