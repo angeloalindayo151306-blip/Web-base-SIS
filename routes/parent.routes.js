@@ -74,16 +74,14 @@ router.put(
 );
 
 /* =========================
-   PARENT DASHBOARD
+PARENT DASHBOARD
 ========================= */
 router.get(
   '/dashboard',
   authenticateToken,
   authorizeRoles('parent'),
   async (req, res) => {
-
     try {
-
       const { data: parent } = await supabase
         .from('parents')
         .select('id')
@@ -113,10 +111,9 @@ router.get(
       const result = [];
 
       for (const link of links || []) {
-
         const student = link.students;
 
-        // ✅ Get enrollments with subject info
+        // ✅ Get enrollments
         const { data: enrollments } = await supabase
           .from('offering_enrollments')
           .select(`
@@ -130,48 +127,24 @@ router.get(
 
         const enrollmentIds = (enrollments || []).map(e => e.id);
 
-        // ✅ Attendance calculation
-        const { count: totalAttendance } = await supabase
+        // ✅ Attendance records
+        const { data: attendance } = await supabase
           .from('attendance')
-          .select('*', { count: 'exact', head: true })
+          .select('status')
           .in('offering_enrollment_id', enrollmentIds);
 
-        const { count: presentCount } = await supabase
-          .from('attendance')
-          .select('*', { count: 'exact', head: true })
-          .in('offering_enrollment_id', enrollmentIds)
-          .eq('status', 'present');
+        const totalDays = attendance?.length || 0;
+        const presentCount =
+          attendance?.filter(a => a.status === 'present').length || 0;
+        const absentCount =
+          attendance?.filter(a => a.status === 'absent').length || 0;
+        const lateCount =
+          attendance?.filter(a => a.status === 'late').length || 0;
 
         const attendance_percentage =
-          totalAttendance > 0
-            ? Math.round((presentCount / totalAttendance) * 100)
+          totalDays > 0
+            ? Math.round(((presentCount + lateCount) / totalDays) * 100)
             : 0;
-
-            const totalDays = attendance.length;
-
-const presentCount = attendance.filter(a =>
-  a.status === 'present'
-).length;
-
-const absentCount = attendance.filter(a =>
-  a.status === 'absent'
-).length;
-
-const lateCount = attendance.filter(a =>
-  a.status === 'late'
-).length;
-
-const percentage = totalDays > 0
-  ? ((presentCount + lateCount) / totalDays) * 100
-  : 0;
-
-res.json({
-  totalDays,
-  present: presentCount,
-  absent: absentCount,
-  late: lateCount,
-  percentage: percentage.toFixed(1)
-});
 
         // ✅ Get grades
         const { data: grades } = await supabase
@@ -188,7 +161,6 @@ res.json({
 
         // ✅ Build subjects with grades
         const subjects = (enrollments || []).map(e => {
-
           const gradeRecord = grades?.find(
             g => g.offering_enrollment_id === e.id
           );
@@ -209,9 +181,16 @@ res.json({
           name: `${student.first_name} ${student.last_name}`,
           department: student?.courses?.departments?.name || '-',
           course: student?.courses?.name || '-',
-          enrollment_status: subjects.length > 0 ? 'Enrolled' : 'Not Enrolled',
+          enrollment_status:
+            subjects.length > 0 ? 'Enrolled' : 'Not Enrolled',
           semester: subjects[0]?.semester || '-',
           attendance_percentage,
+          attendance_summary: {
+            total: totalDays,
+            present: presentCount,
+            absent: absentCount,
+            late: lateCount
+          },
           subjects
         });
       }
