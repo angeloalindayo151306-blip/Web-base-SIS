@@ -150,7 +150,7 @@ router.get(
 );
 
 /* ==========================================
-GET STUDENTS PER OFFERING (LIST VIEW)
+GET STUDENTS PER OFFERING (WITH GRADES)
 ========================================== */
 router.get(
   '/offering/:id/students',
@@ -158,19 +158,20 @@ router.get(
   authorizeRoles('teacher'),
   async (req, res) => {
     try {
+  
       const { id } = req.params;
-
+  
       // ✅ Get teacher
       const { data: teacher } = await supabase
         .from('teachers')
         .select('id')
         .eq('user_id', req.user.id)
         .single();
-
+  
       if (!teacher) {
         return res.status(404).json({ error: 'Teacher not found.' });
       }
-
+  
       // ✅ Verify offering belongs to teacher
       const { data: offering } = await supabase
         .from('subject_offerings')
@@ -178,47 +179,66 @@ router.get(
         .eq('id', id)
         .eq('teacher_id', teacher.id)
         .single();
-
+  
       if (!offering) {
         return res.status(403).json({ error: 'Unauthorized class.' });
       }
-
-      // ✅ Fetch enrolled students
-      const { data, error } = await supabase
+  
+      // ✅ Get enrollments + student info
+      const { data: enrollments, error } = await supabase
         .from('offering_enrollments')
         .select(`
-  id,
-  students(
-    id,
-    first_name,
-    last_name,
-    year_level,
-    block,
-    qr_code_value
-  ),
-  grades(
-    id,
-    prelim,
-    midterm,
-    finals,
-    final_grade,
-    status,
-    is_locked
-  )
-`)
+          id,
+          students(
+            id,
+            first_name,
+            last_name,
+            year_level,
+            block,
+            qr_code_value
+          )
+        `)
         .eq('offering_id', id);
-
+  
       if (error) {
         return res.status(500).json({ error: error.message });
       }
-
-      res.json(data);
-
+  
+      if (!enrollments || enrollments.length === 0) {
+        return res.json([]);
+      }
+  
+      // ✅ Get grades separately
+      const enrollmentIds = enrollments.map(e => e.id);
+  
+      const { data: grades } = await supabase
+        .from('grades')
+        .select(`
+          id,
+          offering_enrollment_id,
+          prelim,
+          midterm,
+          finals,
+          final_grade,
+          status,
+          is_locked
+        `)
+        .in('offering_enrollment_id', enrollmentIds);
+  
+      // ✅ Attach grades manually
+      const result = enrollments.map(e => ({
+        ...e,
+        grades: grades
+          ? grades.filter(g => g.offering_enrollment_id === e.id)
+          : []
+      }));
+  
+      res.json(result);
+  
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
-);
+  });
 
 /* ==========================================
 GET ATTENDANCE PER OFFERING + DATE
