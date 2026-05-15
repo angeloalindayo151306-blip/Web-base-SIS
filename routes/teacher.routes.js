@@ -98,18 +98,25 @@ router.get(
         total_students: o.offering_enrollments?.length || 0
       }));
 
-      res.json({
-        profile: {
-          full_name: `${teacher.first_name} ${teacher.last_name}`,
-          department: teacher.department || '-'
-        },
-        totals: {
-          subjects: result.length,
-          grades: gradeCount || 0,
-          attendance: attendanceCount || 0
-        },
-        classes: result
-      });
+      // ✅ Compute total students handled
+const totalStudentsHandled = result.reduce(
+  (sum, c) => sum + c.total_students,
+  0
+);
+
+res.json({
+  profile: {
+    full_name: `${teacher.first_name} ${teacher.last_name}`,
+    department: teacher.department || '-'
+  },
+  totals: {
+    subjects: result.length,
+    students: totalStudentsHandled,   // ✅ ADD THIS
+    grades: gradeCount || 0,
+    attendance: attendanceCount || 0
+  },
+  classes: result
+});
 
     } catch (err) {
       res.status(500).json({ error: err.message });
