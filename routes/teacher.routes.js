@@ -149,4 +149,68 @@ router.get(
   }
 );
 
+/* ==========================================
+GET STUDENTS PER OFFERING (TEACHER ONLY)
+========================================== */
+router.get(
+  '/offering/:id/students',
+  authenticateToken,
+  authorizeRoles('teacher'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // ✅ Get teacher
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found.' });
+      }
+
+      // ✅ Verify offering belongs to teacher
+      const { data: offering } = await supabase
+        .from('subject_offerings')
+        .select('id')
+        .eq('id', id)
+        .eq('teacher_id', teacher.id)
+        .single();
+
+      if (!offering) {
+        return res.status(403).json({ error: 'Unauthorized class.' });
+      }
+
+      // ✅ Fetch enrolled students with grades
+      const { data, error } = await supabase
+        .from('offering_enrollments')
+        .select(`
+          id,
+          students(first_name, last_name),
+          grades(
+            id,
+            prelim,
+            midterm,
+            finals,
+            final_grade,
+            status,
+            is_locked
+          )
+        `)
+        .eq('offering_id', id);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json(data);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
