@@ -89,6 +89,11 @@ router.post(
         return res.status(400).json({ error: 'Student ID required.' });
       }
 
+      // ✅ Validate UUID format early
+      if (student_id === 'null') {
+        return res.status(400).json({ error: 'Invalid student ID.' });
+      }
+
       // 1️⃣ Get student course + year level
       const { data: student, error: studentError } = await supabase
         .from('students')
@@ -117,7 +122,7 @@ router.post(
 
       const subjectIds = curriculum.map(c => c.subject_id);
 
-      // 3️⃣ Get subject offerings
+      // 3️⃣ Get offerings
       const { data: offerings, error: offeringError } = await supabase
         .from('subject_offerings')
         .select('id')
@@ -131,16 +136,22 @@ router.post(
         return res.json({ message: 'No subject offerings available.' });
       }
 
-      // 4️⃣ Prepare enrollment records
-      const records = offerings.map(o => ({
+      // ✅ Filter out invalid offering IDs
+      const validOfferings = offerings.filter(o => o.id);
+
+      if (validOfferings.length === 0) {
+        return res.status(400).json({ error: 'No valid offerings found.' });
+      }
+
+      const records = validOfferings.map(o => ({
         student_id,
         offering_id: o.id
       }));
 
-      // 5️⃣ Insert enrollments (ignore duplicates safely)
+      // 4️⃣ Insert safely
       const { error: insertError } = await supabase
-        .from('student_enrollments')
-        .insert(records, { ignoreDuplicates: true });
+        .from('offering_enrollments')
+        .insert(records);
 
       if (insertError) {
         return res.status(500).json({ error: insertError.message });

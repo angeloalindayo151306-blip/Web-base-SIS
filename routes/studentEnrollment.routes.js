@@ -74,7 +74,7 @@ router.get(
 );
 
 /* ======================================================
-AUTO ENROLL STUDENT TO ALL CURRICULUM SUBJECTS
+ENROLL STUDENT (ASSIGN COURSE + AUTO ENROLL SUBJECTS)
 ====================================================== */
 router.post(
   '/',
@@ -82,29 +82,32 @@ router.post(
   authorizeRoles('admin'),
   async (req, res) => {
     try {
-      const { student_id } = req.body;
+      const { student_id, course_id, year_level, semester } = req.body;
 
-      if (!student_id) {
-        return res.status(400).json({ error: 'Student ID required.' });
+      if (!student_id || !course_id || !year_level || !semester) {
+        return res.status(400).json({ error: 'All fields required.' });
       }
 
-      // 1️⃣ Get student course + year level
-      const { data: student, error: studentError } = await supabase
+      // ✅ Update student record
+      const { error: updateError } = await supabase
         .from('students')
-        .select('course_id, year_level')
-        .eq('id', student_id)
-        .single();
+        .update({
+          course_id,
+          year_level
+        })
+        .eq('id', student_id);
 
-      if (studentError || !student) {
-        return res.status(404).json({ error: 'Student not found.' });
+      if (updateError) {
+        return res.status(500).json({ error: updateError.message });
       }
 
-      // 2️⃣ Get curriculum subjects
+      // ✅ Get curriculum subjects
       const { data: curriculum, error: curriculumError } = await supabase
         .from('curriculum_subjects')
         .select('subject_id')
-        .eq('course_id', student.course_id)
-        .eq('year_level', student.year_level);
+        .eq('course_id', course_id)
+        .eq('year_level', year_level)
+        .eq('semester', semester);
 
       if (curriculumError) {
         return res.status(500).json({ error: curriculumError.message });
@@ -116,11 +119,12 @@ router.post(
 
       const subjectIds = curriculum.map(c => c.subject_id);
 
-      // 3️⃣ Get offerings
+      // ✅ Get subject offerings
       const { data: offerings, error: offeringError } = await supabase
         .from('subject_offerings')
         .select('id')
-        .in('subject_id', subjectIds);
+        .in('subject_id', subjectIds)
+        .eq('semester', semester);
 
       if (offeringError) {
         return res.status(500).json({ error: offeringError.message });
@@ -130,24 +134,20 @@ router.post(
         return res.json({ message: 'No subject offerings available.' });
       }
 
-      // 4️⃣ Prepare records for offering_enrollments
       const records = offerings.map(o => ({
         student_id,
         offering_id: o.id
       }));
 
-      // 5️⃣ Insert into offering_enrollments
       const { error: insertError } = await supabase
         .from('offering_enrollments')
-        .insert(records, { ignoreDuplicates: true });
+        .insert(records);
 
       if (insertError) {
         return res.status(500).json({ error: insertError.message });
       }
 
-      res.json({
-        message: 'Student enrolled to all curriculum subjects ✅'
-      });
+      res.json({ message: 'Student successfully enrolled ✅' });
 
     } catch (err) {
       res.status(500).json({ error: err.message });
