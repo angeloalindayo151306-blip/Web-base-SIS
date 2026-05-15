@@ -147,18 +147,23 @@ router.post(
       const status = final_grade >= 75 ? 'Passed' : 'Failed';
 
       const { data, error } = await supabase
-        .from('grades')
-        .upsert([{
-          offering_enrollment_id,
-          prelim: p,
-          midterm: m,
-          finals: f,
-          final_grade,
-          status,
-          is_locked: false
-        }])
-        .select()
-        .single();
+  .from('grades')
+  .upsert(
+    [{
+      offering_enrollment_id,
+      prelim: p,
+      midterm: m,
+      finals: f,
+      final_grade,
+      status,
+      is_locked: false
+    }],
+    {
+      onConflict: 'offering_enrollment_id'
+    }
+  )
+  .select()
+  .single();
 
       if (error) return res.status(500).json({ error: error.message });
 
