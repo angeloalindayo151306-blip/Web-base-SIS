@@ -187,16 +187,25 @@ router.get(
       const { data, error } = await supabase
         .from('offering_enrollments')
         .select(`
-          id,
-          students(
-            id,
-            first_name,
-            last_name,
-            year_level,
-            block,
-            qr_code_value
-          )
-        `)
+  id,
+  students(
+    id,
+    first_name,
+    last_name,
+    year_level,
+    block,
+    qr_code_value
+  ),
+  grades(
+    id,
+    prelim,
+    midterm,
+    finals,
+    final_grade,
+    status,
+    is_locked
+  )
+`)
         .eq('offering_id', id);
 
       if (error) {
