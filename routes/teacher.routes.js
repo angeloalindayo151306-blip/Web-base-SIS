@@ -153,7 +153,7 @@ router.get(
 GET STUDENTS PER OFFERING (LIST VIEW)
 ========================================== */
 router.get(
-  '/offering/:id/list',
+  '/offering/:id/students',
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
