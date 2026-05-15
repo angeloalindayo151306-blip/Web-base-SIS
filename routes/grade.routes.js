@@ -254,4 +254,55 @@ router.post(
   }
 );
 
+/* ==========================================
+GET MY GRADES (STUDENT ONLY)
+========================================== */
+router.get(
+  '/student/me',
+  authenticateToken,
+  authorizeRoles('student'),
+  async (req, res) => {
+    try {
+      // ✅ Get student record using logged-in user
+      const { data: student } = await supabase
+        .from('students')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (!student) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+
+      // ✅ Get grades through offering_enrollments
+      const { data, error } = await supabase
+        .from('offering_enrollments')
+        .select(`
+          id,
+          subject_offerings(
+            semester,
+            subjects(name)
+          ),
+          grades(
+            prelim,
+            midterm,
+            finals,
+            final_grade,
+            status,
+            is_locked
+          )
+        `)
+        .eq('student_id', student.id);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
