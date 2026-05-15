@@ -314,4 +314,86 @@ router.post(
   }
 );
 
+/* ==========================================
+SCAN QR ATTENDANCE (TEACHER)
+========================================== */
+router.post(
+  '/attendance/scan',
+  authenticateToken,
+  authorizeRoles('teacher'),
+  async (req, res) => {
+    try {
+      const { qr_code_value, offering_id, attendance_date } = req.body;
+
+      if (!qr_code_value || !offering_id || !attendance_date) {
+        return res.status(400).json({ error: 'Missing fields.' });
+      }
+
+      // ✅ Get teacher
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found.' });
+      }
+
+      // ✅ Verify offering belongs to teacher
+      const { data: offering } = await supabase
+        .from('subject_offerings')
+        .select('id')
+        .eq('id', offering_id)
+        .eq('teacher_id', teacher.id)
+        .single();
+
+      if (!offering) {
+        return res.status(403).json({ error: 'Unauthorized class.' });
+      }
+
+      // ✅ Find student by QR
+      const { data: student } = await supabase
+        .from('students')
+        .select('id')
+        .eq('qr_code_value', qr_code_value)
+        .single();
+
+      if (!student) {
+        return res.status(404).json({ error: 'Invalid QR code.' });
+      }
+
+      // ✅ Check enrollment
+      const { data: enrollment } = await supabase
+        .from('offering_enrollments')
+        .select('id')
+        .eq('offering_id', offering_id)
+        .eq('student_id', student.id)
+        .single();
+
+      if (!enrollment) {
+        return res.status(403).json({ error: 'Student not enrolled in this class.' });
+      }
+
+      // ✅ Insert attendance
+      const { error } = await supabase
+        .from('attendance')
+        .upsert([{
+          offering_enrollment_id: enrollment.id,
+          attendance_date,
+          status: 'Present'
+        }]);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({ message: 'Attendance recorded ✅' });
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
