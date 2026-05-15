@@ -150,10 +150,10 @@ router.get(
 );
 
 /* ==========================================
-GET STUDENTS PER OFFERING (TEACHER ONLY)
+GET STUDENTS PER OFFERING (LIST VIEW)
 ========================================== */
 router.get(
-  '/offering/:id/students',
+  '/offering/:id/list',
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
@@ -183,20 +183,18 @@ router.get(
         return res.status(403).json({ error: 'Unauthorized class.' });
       }
 
-      // ✅ Fetch enrolled students with grades
+      // ✅ Fetch enrolled students
       const { data, error } = await supabase
         .from('offering_enrollments')
         .select(`
           id,
-          students(first_name, last_name),
-          grades(
+          students(
             id,
-            prelim,
-            midterm,
-            finals,
-            final_grade,
-            status,
-            is_locked
+            first_name,
+            last_name,
+            year_level,
+            block,
+            qr_code_value
           )
         `)
         .eq('offering_id', id);
