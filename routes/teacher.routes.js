@@ -322,12 +322,17 @@ router.post(
       }
 
       const { error } = await supabase
-        .from('attendance')
-        .upsert([{
-          offering_enrollment_id,
+      .from('attendance')
+      .upsert(
+        [{
+          offering_enrollment_id: enrollment.id,
           attendance_date,
-          status
-        }]);
+          status: 'present'
+        }],
+        {
+          onConflict: 'offering_enrollment_id,attendance_date'
+        }
+      );
 
       if (error) {
         return res.status(500).json({ error: error.message });
@@ -404,12 +409,17 @@ router.post(
 
       // ✅ Insert attendance
       const { error } = await supabase
-        .from('attendance')
-        .upsert([{
-          offering_enrollment_id: enrollment.id,
-          attendance_date,
-          status: 'Present'
-        }]);
+  .from('attendance')
+  .upsert(
+    [{
+      offering_enrollment_id,
+      attendance_date,
+      status
+    }],
+    {
+      onConflict: 'offering_enrollment_id,attendance_date'
+    }
+  );
 
       if (error) {
         return res.status(500).json({ error: error.message });
