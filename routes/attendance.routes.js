@@ -6,7 +6,7 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ==========================================
-   GET TODAY CLASS STATUS
+GET TODAY CLASS STATUS (ADMIN / TEACHER)
 ========================================== */
 router.get(
   '/class-status/:offering_id',
@@ -17,7 +17,6 @@ router.get(
     const { offering_id } = req.params;
     const today = new Date().toISOString().split('T')[0];
 
-    // ✅ Get all enrolled students
     const { data: enrollments, error: enrollError } = await supabase
       .from('offering_enrollments')
       .select(`
@@ -32,7 +31,6 @@ router.get(
 
     const enrollmentIds = enrollments.map(e => e.id);
 
-    // ✅ Get today's attendance
     const { data: attendanceToday } = await supabase
       .from('attendance')
       .select('offering_enrollment_id')
@@ -57,7 +55,7 @@ router.get(
 );
 
 /* ==========================================
-   MARK ATTENDANCE
+MARK ATTENDANCE (TEACHER)
 ========================================== */
 router.post(
   '/',
@@ -123,6 +121,55 @@ router.post(
     res.json({
       message: `${student.first_name} ${student.last_name} marked present.`
     });
+  }
+);
+
+/* ==========================================
+GET ATTENDANCE FOR LOGGED-IN STUDENT
+========================================== */
+router.get(
+  '/student/me',
+  authenticateToken,
+  authorizeRoles('student'),
+  async (req, res) => {
+    try {
+      const user_id = req.user.id;
+
+      // ✅ Get student record
+      const { data: student, error: studentError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('user_id', user_id)
+        .single();
+
+      if (studentError || !student) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+
+      // ✅ Get attendance records
+      const { data, error } = await supabase
+        .from('attendance')
+        .select(`
+          attendance_date,
+          status,
+          offering_enrollments(
+            subject_offerings(
+              semester,
+              subjects(name)
+            )
+          )
+        `)
+        .eq('offering_enrollments.student_id', student.id);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json(data);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   }
 );
 

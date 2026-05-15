@@ -6,14 +6,13 @@ const authorizeRoles = require('../middleware/authorizeRoles');
 const router = express.Router();
 
 /* ==========================================
-   GET GRADES
+GET ALL GRADES (ADMIN / TEACHER)
 ========================================== */
 router.get(
   '/',
   authenticateToken,
   authorizeRoles('teacher', 'admin'),
   async (req, res) => {
-
     const { data, error } = await supabase
       .from('grades')
       .select(`
@@ -35,20 +34,70 @@ router.get(
       `);
 
     if (error) return res.status(500).json({ error: error.message });
-
     res.json(data);
   }
 );
 
 /* ==========================================
-   SAVE / UPDATE GRADE (TEACHER ONLY IF NOT LOCKED)
+GET GRADES FOR LOGGED-IN STUDENT
+========================================== */
+router.get(
+  '/student/me',
+  authenticateToken,
+  authorizeRoles('student'),
+  async (req, res) => {
+    try {
+      const user_id = req.user.id;
+
+      // ✅ Get student record
+      const { data: student, error: studentError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('user_id', user_id)
+        .single();
+
+      if (studentError || !student) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+
+      // ✅ Get grades
+      const { data, error } = await supabase
+        .from('grades')
+        .select(`
+          prelim,
+          midterm,
+          finals,
+          final_grade,
+          status,
+          offering_enrollments(
+            subject_offerings(
+              semester,
+              subjects(name)
+            )
+          )
+        `)
+        .eq('offering_enrollments.student_id', student.id);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json(data);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+/* ==========================================
+SAVE / UPDATE GRADE (TEACHER)
 ========================================== */
 router.post(
   '/',
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
-
     const {
       offering_enrollment_id,
       prelim,
@@ -56,7 +105,6 @@ router.post(
       finals
     } = req.body;
 
-    // ✅ Check if grade already exists
     const { data: existing } = await supabase
       .from('grades')
       .select('is_locked')
@@ -91,20 +139,18 @@ router.post(
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
-
     res.json(data);
   }
 );
 
 /* ==========================================
-   LOCK GRADE (TEACHER)
+LOCK GRADE (TEACHER)
 ========================================== */
 router.post(
   '/lock/:id',
   authenticateToken,
   authorizeRoles('teacher'),
   async (req, res) => {
-
     const { id } = req.params;
 
     const { error } = await supabase
@@ -119,14 +165,13 @@ router.post(
 );
 
 /* ==========================================
-   UNLOCK GRADE (ADMIN ONLY)
+UNLOCK GRADE (ADMIN)
 ========================================== */
 router.post(
   '/unlock/:id',
   authenticateToken,
   authorizeRoles('admin'),
   async (req, res) => {
-
     const { id } = req.params;
 
     const { error } = await supabase
