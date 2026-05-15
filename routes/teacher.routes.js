@@ -213,4 +213,105 @@ router.get(
   }
 );
 
+/* ==========================================
+GET ATTENDANCE PER OFFERING + DATE
+========================================== */
+router.get(
+  '/offering/:id/attendance',
+  authenticateToken,
+  authorizeRoles('teacher'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date } = req.query;
+
+      if (!date) {
+        return res.status(400).json({ error: 'Date is required.' });
+      }
+
+      // ✅ Get teacher
+      const { data: teacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found.' });
+      }
+
+      // ✅ Verify offering belongs to teacher
+      const { data: offering } = await supabase
+        .from('subject_offerings')
+        .select('id')
+        .eq('id', id)
+        .eq('teacher_id', teacher.id)
+        .single();
+
+      if (!offering) {
+        return res.status(403).json({ error: 'Unauthorized class.' });
+      }
+
+      // ✅ Get students + attendance for date
+      const { data, error } = await supabase
+        .from('offering_enrollments')
+        .select(`
+          id,
+          students(first_name, last_name),
+          attendance(
+            id,
+            attendance_date,
+            status
+          )
+        `)
+        .eq('offering_id', id)
+        .eq('attendance.attendance_date', date);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json(data);
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+/* ==========================================
+SAVE ATTENDANCE (TEACHER)
+========================================== */
+router.post(
+  '/attendance',
+  authenticateToken,
+  authorizeRoles('teacher'),
+  async (req, res) => {
+    try {
+      const { offering_enrollment_id, attendance_date, status } = req.body;
+
+      if (!offering_enrollment_id || !attendance_date || !status) {
+        return res.status(400).json({ error: 'Missing fields.' });
+      }
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert([{
+          offering_enrollment_id,
+          attendance_date,
+          status
+        }]);
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      res.json({ message: 'Attendance saved ✅' });
+
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
