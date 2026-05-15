@@ -315,6 +315,7 @@ router.post(
   authorizeRoles('teacher'),
   async (req, res) => {
     try {
+
       const { offering_enrollment_id, attendance_date, status } = req.body;
 
       if (!offering_enrollment_id || !attendance_date || !status) {
@@ -322,17 +323,17 @@ router.post(
       }
 
       const { error } = await supabase
-      .from('attendance')
-      .upsert(
-        [{
-          offering_enrollment_id: enrollment.id,
-          attendance_date,
-          status: 'present'
-        }],
-        {
-          onConflict: 'offering_enrollment_id,attendance_date'
-        }
-      );
+        .from('attendance')
+        .upsert(
+          [{
+            offering_enrollment_id,
+            attendance_date,
+            status
+          }],
+          {
+            onConflict: 'offering_enrollment_id,attendance_date'
+          }
+        );
 
       if (error) {
         return res.status(500).json({ error: error.message });
@@ -408,18 +409,18 @@ router.post(
       }
 
       // ✅ Insert attendance
-      const { error } = await supabase
-  .from('attendance')
-  .upsert(
-    [{
-      offering_enrollment_id,
-      attendance_date,
-      status
-    }],
-    {
-      onConflict: 'offering_enrollment_id,attendance_date'
-    }
-  );
+const { error } = await supabase
+.from('attendance')
+.upsert(
+  [{
+    offering_enrollment_id: enrollment.id,
+    attendance_date,
+    status: 'present'
+  }],
+  {
+    onConflict: 'offering_enrollment_id,attendance_date'
+  }
+);
 
       if (error) {
         return res.status(500).json({ error: error.message });
