@@ -147,6 +147,32 @@ router.get(
             ? Math.round((presentCount / totalAttendance) * 100)
             : 0;
 
+            const totalDays = attendance.length;
+
+const presentCount = attendance.filter(a =>
+  a.status === 'present'
+).length;
+
+const absentCount = attendance.filter(a =>
+  a.status === 'absent'
+).length;
+
+const lateCount = attendance.filter(a =>
+  a.status === 'late'
+).length;
+
+const percentage = totalDays > 0
+  ? ((presentCount + lateCount) / totalDays) * 100
+  : 0;
+
+res.json({
+  totalDays,
+  present: presentCount,
+  absent: absentCount,
+  late: lateCount,
+  percentage: percentage.toFixed(1)
+});
+
         // ✅ Get grades
         const { data: grades } = await supabase
           .from('grades')
