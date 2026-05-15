@@ -99,12 +99,17 @@ router.post(
     const today = new Date().toISOString().split('T')[0];
 
     const { error } = await supabase
-      .from('attendance')
-      .insert([{
-        offering_enrollment_id: enrollment.id,
-        attendance_date: today,
-        status: 'present'
-      }]);
+  .from('attendance')
+  .upsert(
+    [{
+      offering_enrollment_id,
+      attendance_date,
+      status
+    }],
+    {
+      onConflict: 'offering_enrollment_id,attendance_date'
+    }
+  );
 
     if (error) {
       if (error.code === '23505') {
